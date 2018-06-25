@@ -1,0 +1,511 @@
+openapi: 3.0.0
+info:
+  title: Kyma Gateway Metadata API
+  version: 1.0.0
+servers:
+- url: /
+tags:
+- description: Service registering API and events catalog.
+  name: service metadata
+paths:
+  /v1/metadata/services:
+    get:
+      operationId: getServices
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Service'
+                type: array
+          description: Successful operation
+        500:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataErrorResponse'
+          description: Internal server error
+      summary: Gets all registered services
+      tags:
+      - service metadata
+    post:
+      operationId: registerService
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceDetails'
+        description: Service object to be registered
+        required: true
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceId'
+          description: Successful operation
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataErrorResponse'
+          description: Bad request
+        500:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataErrorResponse'
+          description: Internal server error
+      summary: Registers a new service
+      tags:
+      - service metadata
+  /v1/metadata/services/{serviceId}:
+    delete:
+      operationId: deleteServiceByServiceId
+      parameters:
+      - description: ID of a service
+        explode: false
+        in: path
+        name: serviceId
+        required: true
+        schema:
+          format: uuid
+          type: string
+        style: simple
+      responses:
+        204:
+          description: Successful operation
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataErrorResponse'
+          description: Service not found
+        500:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataErrorResponse'
+          description: Internal server error
+      summary: Deletes a service by service ID
+      tags:
+      - service metadata
+    get:
+      operationId: getServiceByServiceId
+      parameters:
+      - description: ID of a service
+        explode: false
+        in: path
+        name: serviceId
+        required: true
+        schema:
+          format: uuid
+          type: string
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceDetails'
+          description: Successful operation
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataErrorResponse'
+          description: Service not found
+        500:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataErrorResponse'
+          description: Internal server error
+      summary: Gets a service by service ID
+      tags:
+      - service metadata
+    put:
+      operationId: updateService
+      parameters:
+      - description: ID of a service
+        explode: false
+        in: path
+        name: serviceId
+        required: true
+        schema:
+          format: uuid
+          type: string
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceDetails'
+        description: Service object to be stored
+        required: true
+      responses:
+        200:
+          description: Successful operation
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataErrorResponse'
+          description: Service not found
+        500:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataErrorResponse'
+          description: Internal server error
+      summary: Updates a service by service ID
+      tags:
+      - service metadata
+  /v1/health:
+    get:
+      operationId: getHealth
+      responses:
+        200:
+          description: The service is in a good health
+      summary: Returns health of a service
+      tags:
+      - health
+  /v1/events:
+    post:
+      operationId: publishEvent
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishRequest'
+        description: The event to be published
+        required: true
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishResponse'
+          description: The event was successfully published
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        401:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Authentication failure
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not authorized
+        500:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Server error
+      summary: Publish an event
+      tags:
+      - publish
+components:
+  schemas:
+    ServiceId:
+      example:
+        id: 046b6c7f-0b8a-43b9-b35d-6489e6daee91
+      properties:
+        id:
+          format: uuid
+          type: string
+      type: object
+    ServiceDetails:
+      example:
+        provider: provider
+        documentation:
+          docs:
+          - source: source
+            title: title
+            type: type
+          - source: source
+            title: title
+            type: type
+          displayName: displayName
+          description: description
+          type: type
+          tags:
+          - tags
+          - tags
+        name: name
+        description: description
+        api:
+          credentials:
+            oauth:
+              clientId: clientId
+              clientSecret: clientSecret
+              url: http://example.com/aeiou
+          targetUrl: http://example.com/aeiou
+          spec: '{}'
+        events:
+          spec: '{}'
+      properties:
+        provider:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        api:
+          $ref: '#/components/schemas/Api'
+        events:
+          $ref: '#/components/schemas/Events'
+        documentation:
+          $ref: '#/components/schemas/Documentation'
+      required:
+      - description
+      - name
+      - provider
+      type: object
+    Service:
+      example:
+        provider: provider
+        name: name
+        description: description
+        id: 046b6c7f-0b8a-43b9-b35d-6489e6daee91
+      properties:
+        id:
+          format: uuid
+          type: string
+        provider:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+      type: object
+    Api:
+      example:
+        credentials:
+          oauth:
+            clientId: clientId
+            clientSecret: clientSecret
+            url: http://example.com/aeiou
+        targetUrl: http://example.com/aeiou
+        spec: '{}'
+      properties:
+        targetUrl:
+          format: uri
+          type: string
+        credentials:
+          $ref: '#/components/schemas/ApiCredentials'
+        spec:
+          description: 'OpenApi v2 swagger file: https://github.com/OAI/OpenAPI-Specification/blob/master/schemas/v2.0/schema.json'
+          type: object
+      required:
+      - targetUrl
+      type: object
+    Events:
+      example:
+        spec: '{}'
+      properties:
+        spec:
+          description: 'AsynApi file v1: https://github.com/asyncapi/asyncapi/blob/develop/schema/asyncapi.json'
+          type: object
+      type: object
+    Documentation:
+      example:
+        docs:
+        - source: source
+          title: title
+          type: type
+        - source: source
+          title: title
+          type: type
+        displayName: displayName
+        description: description
+        type: type
+        tags:
+        - tags
+        - tags
+      properties:
+        displayName:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        tags:
+          items:
+            type: string
+          type: array
+        docs:
+          items:
+            $ref: '#/components/schemas/Document'
+          type: array
+      required:
+      - description
+      - displayName
+      - type
+      type: object
+    Document:
+      example:
+        source: source
+        title: title
+        type: type
+      properties:
+        title:
+          type: string
+        type:
+          type: string
+        source:
+          type: string
+      required:
+      - source
+      - title
+      - type
+      type: object
+    ApiCredentials:
+      example:
+        oauth:
+          clientId: clientId
+          clientSecret: clientSecret
+          url: http://example.com/aeiou
+      properties:
+        oauth:
+          $ref: '#/components/schemas/OAuth'
+      required:
+      - oauth
+      type: object
+    OAuth:
+      example:
+        clientId: clientId
+        clientSecret: clientSecret
+        url: http://example.com/aeiou
+      properties:
+        url:
+          format: uri
+          type: string
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+      required:
+      - clientId
+      - clientSecret
+      - url
+      type: object
+    MetadataErrorResponse:
+      properties:
+        code:
+          format: int32
+          type: integer
+        error:
+          type: string
+      type: object
+    PublishRequest:
+      description: A Publish request
+      example:
+        event-type-version: v1
+        event-type: order.created
+        event-time: 2000-01-23T04:56:07.000+00:00
+        event-id: 31109198-4d69-4ae0-972d-76117f3748c8
+      properties:
+        event-type:
+          description: Type of the event.
+          example: order.created
+          format: hostname
+          pattern: ^[a-zA-Z]+([_\-\.]?[a-zA-Z0-9]+)*$
+          type: string
+        event-type-version:
+          description: The version of the event-type. This is applicable to the data payload alone.
+          example: v1
+          pattern: ^[a-zA-Z0-9]+$
+          type: string
+        event-id:
+          description: Optional publisher provided ID (UUID v4) of the to-be-published event. When omitted, one will be automatically generated.
+          example: 31109198-4d69-4ae0-972d-76117f3748c8
+          pattern: ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$
+          type: string
+        event-time:
+          description: RFC 3339 timestamp of when the event happened.
+          format: date-time
+          type: string
+        data:
+          $ref: '#/components/schemas/AnyValue'
+      required:
+      - data
+      - event-time
+      - event-type
+      - event-type-version
+      type: object
+    PublishResponse:
+      description: A Publish response
+      example:
+        event-id: 31109198-4d69-4ae0-972d-76117f3748c8
+      properties:
+        event-id:
+          description: ID of the published event
+          example: 31109198-4d69-4ae0-972d-76117f3748c8
+          pattern: ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$
+          type: string
+      required:
+      - event-id
+      type: object
+    AnyValue:
+      description: Can be any value but null.
+      nullable: false
+    APIError:
+      description: API Error response body
+      properties:
+        status:
+          description: original HTTP error code, should be consistent with the response HTTP code
+          format: int32
+          maximum: 599
+          minimum: 100
+          type: integer
+        type:
+          description: classification of the error type, lower case with underscore eg validation_failure
+          pattern: '[a-z]+[a-z_]*[a-z]+'
+          type: string
+        message:
+          description: descriptive error message for debugging
+          type: string
+        moreInfo:
+          description: link to documentation to investigate further and finding support
+          format: uri
+          type: string
+        details:
+          description: list of error causes
+          items:
+            $ref: '#/components/schemas/APIErrorDetail'
+          type: array
+      required:
+      - status
+      - type
+      type: object
+    APIErrorDetail:
+      description: schema for specific error detail
+      properties:
+        field:
+          description: a bean notation expression specifying the element in request data causing the error, eg product.variants[3].name, this can be empty if violation was not field specific
+          type: string
+        type:
+          description: classification of the error detail type, lower case with underscore eg missing_value, this value must be always interpreted in context of the general error type.
+          pattern: '[a-z]+[a-z_]*[a-z]+'
+          type: string
+        message:
+          description: descriptive error detail message for debugging
+          type: string
+        moreInfo:
+          description: link to documentation to investigate further and finding support for error detail
+          format: uri
+          type: string
+      required:
+      - type
+      type: object
