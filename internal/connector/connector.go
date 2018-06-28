@@ -70,6 +70,7 @@ type WormholeConnectorConfig struct {
 	SerfPort        int
 	Timeout         time.Duration
 	DataDir         string
+	KymaRemoteHost  string
 }
 
 // splitLocalAddr takes a localAddr[:port] address and returns its address and
@@ -381,6 +382,15 @@ func (wc *WormholeConnector) serveHijack(w http.ResponseWriter, writ io.Writer, 
 func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
 	// redirect every request to the raft leader
 	mux.PathPrefix("/").HandlerFunc(wc.handleLeaderRedirect)
+
+	mux.HandleFunc("/v1/metadata/services", wc.getServices).Methods("GET")
+	mux.HandleFunc("/v1/metadata/services", wc.registerService).Methods("POST")
+	mux.HandleFunc("/v1/metadata/services/{serviceId}", wc.deleteService).Methods("DELETE")
+	mux.HandleFunc("/v1/metadata/services/{serviceId}", wc.getServiceById).Methods("GET")
+	mux.HandleFunc("/v1/metadata/services/{serviceId}", wc.updateService).Methods("PUT")
+
+	mux.HandleFunc("/v1/health", wc.getHealth).Methods("GET")
+	mux.HandleFunc("/v1/events", wc.publishEvent).Methods("POST")
 }
 
 // ListenAndServeTLS spawns a goroutine that runs http.ListenAndServeTLS.

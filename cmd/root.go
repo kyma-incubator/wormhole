@@ -48,6 +48,7 @@ var (
 	flagSerfPort        int
 	flagRaftPort        int
 	flagLocalAddr       string
+	flagKymaRemoteHost  string // host where the remote Kyma cluster is accessible
 )
 
 // Execute adds all child commands to the root command sets flags appropriately.
@@ -71,6 +72,7 @@ func init() {
 	RootCmd.PersistentFlags().IntVar(&flagRaftPort, "raft-port", 1112, "port number on which Raft listens (default is 1112)")
 	RootCmd.PersistentFlags().StringVar(&flagLocalAddr, "local-addr", "127.0.0.1:8080", "address to bind")
 	RootCmd.PersistentFlags().StringVar(&flagDataDir, "data-dir", defaultDataDir, "data directory to store state")
+	RootCmd.PersistentFlags().StringVar(&flagKymaRemoteHost, "kyma-remote-host", "172.17.0.2", "IP address of the Kyma remote host")
 
 	viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	viper.BindPFlag("kymaServer", RootCmd.PersistentFlags().Lookup("kyma-server"))
@@ -108,6 +110,7 @@ func runWormholeConnector(cmd *cobra.Command, args []string) {
 		SerfPort:        viper.GetInt("serf.port"),
 		Timeout:         viper.GetDuration("timeout"),
 		DataDir:         viper.GetString("dataDir"),
+		KymaRemoteHost:  flagKymaRemoteHost,
 	}
 
 	term := make(chan os.Signal, 2)
