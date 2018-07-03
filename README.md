@@ -31,3 +31,30 @@ $ ./wormhole-connector
 ```
 
 Then its REST API will be available via https://localhost:8080/.
+
+## how to test the REST API
+
+Open another terminal, test each method for the REST API.
+
+```
+# register service
+$ curl -v -X POST --insecure --http2 https://localhost:8080/v1/metadata/services
+
+# get services
+$ curl -v -X GET --insecure --http2 https://localhost:8080/v1/metadata/services
+
+# get service by ID
+$ curl -v -X GET --insecure --http2 https://localhost:8080/v1/metadata/services/id1
+
+# delete service
+$ curl -v -X DELETE --insecure --http2 https://localhost:8080/v1/metadata/services/id1
+
+# update service
+$ curl -v -X PUT --insecure --http2 https://localhost:8080/v1/metadata/services/id1
+
+# get health
+$ curl -v -X GET --insecure --http2 https://localhost:8080/v1/health
+
+# publish events
+$ curl -v -X POST --insecure --http2 https://localhost:8080/v1/events
+```
