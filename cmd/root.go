@@ -39,8 +39,13 @@ var (
 		Run:   runWormholeConnector,
 	}
 
-	flagKymaServer string
-	flagTimeout    time.Duration
+	workDir string
+
+	flagKymaServer      string
+	flagTimeout         time.Duration
+	flagSerfMemberAddrs string
+	flagSerfPort        int
+	flagRaftPort        int
 )
 
 // Execute adds all child commands to the root command sets flags appropriately.
@@ -59,6 +64,11 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.connector.yaml)")
 	RootCmd.PersistentFlags().StringVar(&flagKymaServer, "kyma-server", "localhost:8080", "Kyma server address")
 	RootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 5*time.Minute, "Timeout for the HTTP/2 connection")
+	RootCmd.PersistentFlags().StringVar(&flagSerfMemberAddrs, "serf-member-addrs", "", "a set of IP:Port pairs of each Serf member")
+	RootCmd.PersistentFlags().IntVar(&flagSerfPort, "serf-port", 1111, "port number on which Serf listens (default is 1111)")
+	RootCmd.PersistentFlags().IntVar(&flagRaftPort, "raft-port", 1112, "port number on which Raft listens (default is 1112)")
+
+	workDir, _ = os.Getwd()
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -79,8 +89,12 @@ func initConfig() {
 
 func runWormholeConnector(cmd *cobra.Command, args []string) {
 	config := connector.WormholeConnectorConfig{
-		KymaServer: flagKymaServer,
-		Timeout:    flagTimeout,
+		KymaServer:      flagKymaServer,
+		RaftPort:        flagRaftPort,
+		SerfMemberAddrs: flagSerfMemberAddrs,
+		SerfPort:        flagSerfPort,
+		Timeout:         flagTimeout,
+		WorkDir:         workDir,
 	}
 
 	term := make(chan os.Signal, 2)
@@ -90,7 +104,13 @@ func runWormholeConnector(cmd *cobra.Command, args []string) {
 
 	w.ListenAndServeTLS("server.crt", "server.key")
 
-	<-term
+	if err := w.SetupSerf(); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := w.SetupRaft(term); err != nil {
+		log.Fatal(err)
+	}
 
 	log.Println("Shutting down server...")
 

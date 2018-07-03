@@ -16,22 +16,41 @@ package connector
 
 import (
 	"context"
-	"io"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/gorilla/mux"
+	"github.com/hashicorp/serf/serf"
 	"github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
+
+	"github.com/kinvolk/wormhole-connector/lib"
 )
 
 type WormholeConnector struct {
-	server http.Server
+	localAddr string
+	raftAddr  string
+	raftPort  int
+
+	serfDB     *lib.SerfDB
+	serfEvents chan serf.Event
+	serfPeers  []lib.SerfPeer
+	serfPort   int
+
+	server  http.Server
+	workDir string
 }
 
 type WormholeConnectorConfig struct {
-	KymaServer string
-	Timeout    time.Duration
+	KymaServer      string
+	RaftPort        int
+	SerfMemberAddrs string
+	SerfPort        int
+	Timeout         time.Duration
+	WorkDir         string
 }
 
 func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
@@ -41,14 +60,35 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 	srv.IdleTimeout = config.Timeout
 	http2.ConfigureServer(&srv, &http2.Server{})
 
-	mux := http.NewServeMux()
-	srv.Handler = addLogger(mux)
+	m := mux.NewRouter()
+	srv.Handler = addLogger(m)
 
-	registerHandlers(mux)
+	var peerAddrs []string
+	var peers []lib.SerfPeer
 
-	return &WormholeConnector{
-		server: srv,
+	if config.SerfMemberAddrs != "" {
+		peerAddrs = strings.Split(config.SerfMemberAddrs, ",")
 	}
+
+	for _, addr := range peerAddrs {
+		peers = append(peers, lib.SerfPeer{
+			PeerName: addr, // it should be actually hostname
+			Address:  addr,
+		})
+	}
+
+	wc := &WormholeConnector{
+		localAddr: localAddr,
+		raftPort:  config.RaftPort,
+		serfPeers: peers,
+		serfPort:  config.SerfPort,
+		server:    srv,
+		workDir:   config.WorkDir,
+	}
+
+	registerHandlers(m, wc)
+
+	return wc
 }
 
 func addLogger(next http.Handler) http.Handler {
@@ -59,8 +99,11 @@ func addLogger(next http.Handler) http.Handler {
 	})
 }
 
-func registerHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("/", doStuff)
+func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
+	mux.HandleFunc("/v1/serf/peers/get", wc.getSerfPeers).Methods("GET")
+	mux.HandleFunc("/v1/serf/peers/get/{peerName}", wc.getSerfPeer).Methods("GET")
+	mux.HandleFunc("/v1/serf/peers/set/{newPeerName}", wc.setSerfPeers).Methods("POST")
+	mux.HandleFunc("/v1/serf/peers/delete/{peerName}", wc.deleteSerfPeers).Methods("DELETE")
 }
 
 func (w *WormholeConnector) ListenAndServeTLS(cert, key string) {
@@ -75,12 +118,12 @@ func (w *WormholeConnector) ListenAndServeTLS(cert, key string) {
 
 func (w *WormholeConnector) Shutdown(ctx context.Context) {
 	w.server.Shutdown(ctx)
-}
 
-func doStuff(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	l := getLogger(ctx)
-	stuff(w, r, l)
+	defer func() {
+		if err := w.serfDB.BoltDB.Close(); err != nil {
+			fmt.Printf("cannot close DB\n")
+		}
+	}()
 }
 
 func getLogger(ctx context.Context) *log.Entry {
@@ -89,9 +132,4 @@ func getLogger(ctx context.Context) *log.Entry {
 		return nil
 	}
 	return logger
-}
-
-func stuff(w http.ResponseWriter, r *http.Request, logger *log.Entry) {
-	logger.Println("doing stuff")
-	io.WriteString(w, "THIS IS A RESPONSE")
 }
