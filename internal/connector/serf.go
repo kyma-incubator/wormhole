@@ -15,6 +15,7 @@
 package connector
 
 import (
+	"crypto/md5"
 	"fmt"
 	"io"
 	"log"
@@ -129,7 +130,9 @@ func (wc *WormholeConnector) deleteSerfPeers(w http.ResponseWriter, r *http.Requ
 }
 
 func (w *WormholeConnector) SetupSerf() error {
-	serfDataDir := filepath.Join(w.workDir, "tmp/serf")
+	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", w.localAddr, w.serfPort))))
+
+	serfDataDir := filepath.Join(w.workDir, "tmp/serf", id)
 	if err := os.MkdirAll(serfDataDir, os.FileMode(0755)); err != nil {
 		return fmt.Errorf("unable to create directory %s: %v", serfDataDir, err)
 	}
@@ -159,6 +162,6 @@ func (w *WormholeConnector) SetupSerf() error {
 		return fmt.Errorf("unable to join an existing serf cluster: %v", err)
 	}
 
-	log.Println("successfully joined %d peers", numJoined)
+	log.Printf("successfully joined %d peers\n", numJoined)
 	return nil
 }

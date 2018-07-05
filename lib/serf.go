@@ -83,7 +83,6 @@ func (db *SerfDB) DeletePeer(key string, newPeer SerfPeer) {
 
 func GetNewSerf(serfAddr string, serfPort int, serfEvents chan serf.Event) (*serf.Serf, error) {
 	memberlistConfig := memberlist.DefaultLANConfig()
-	memberlistConfig.AdvertiseAddr = serfAddr
 	memberlistConfig.BindAddr = serfAddr
 	memberlistConfig.BindPort = serfPort
 	memberlistConfig.LogOutput = os.Stdout
