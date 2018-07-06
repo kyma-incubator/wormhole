@@ -17,15 +17,12 @@ package connector
 import (
 	"crypto/md5"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	bolt "github.com/coreos/bbolt"
-	"github.com/gorilla/mux"
 
 	"github.com/hashicorp/serf/serf"
 	"github.com/kinvolk/wormhole-connector/lib"
@@ -60,73 +57,6 @@ func (w *WormholeConnector) InitSerfDB(dbPath string) error {
 	}
 
 	return nil
-}
-
-func (wc *WormholeConnector) getSerfPeers(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	l := getLogger(ctx)
-	l.Println("doing getSerfPeers")
-
-	var peers []lib.SerfPeer
-	peers = append(peers, wc.serfDB.GetPeer(wc.serfDB.SerfKeyPeers))
-	wc.serfPeers = peers
-	io.WriteString(w, fmt.Sprintf("%v\n", wc.serfPeers))
-}
-
-func (wc *WormholeConnector) getSerfPeer(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	l := getLogger(ctx)
-	l.Println("doing getSerfPeers")
-
-	params := mux.Vars(r)
-	peerName := params["peerName"]
-
-	var resPeer lib.SerfPeer
-	for _, p := range wc.serfPeers {
-		if p.PeerName == peerName {
-			resPeer = wc.serfDB.GetPeer(wc.serfDB.SerfKeyPeers)
-			wc.serfPeers = append(wc.serfPeers, resPeer)
-		}
-	}
-
-	io.WriteString(w, fmt.Sprintf("%v\n", resPeer))
-}
-
-func (wc *WormholeConnector) setSerfPeers(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	l := getLogger(ctx)
-	l.Println("doing setSerfPeers")
-
-	params := mux.Vars(r)
-	newPeerName := params["newPeerName"]
-	newAddress := params["newAddress"]
-
-	wc.serfPeers = append(wc.serfPeers, lib.SerfPeer{
-		PeerName: newPeerName,
-		Address:  newAddress,
-	})
-	for _, p := range wc.serfPeers {
-		wc.serfDB.SetPeer(wc.serfDB.SerfKeyPeers, p)
-	}
-
-	io.WriteString(w, fmt.Sprintf("SetPeers %v done\n", newPeerName))
-}
-
-func (wc *WormholeConnector) deleteSerfPeers(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	l := getLogger(ctx)
-	l.Println("doing deleteSerfPeers")
-
-	params := mux.Vars(r)
-	peerName := params["peerName"]
-
-	for _, p := range wc.serfPeers {
-		if p.PeerName == peerName {
-			wc.serfDB.DeletePeer(wc.serfDB.SerfKeyPeers, p)
-		}
-	}
-
-	io.WriteString(w, fmt.Sprintf("DeletePeers %v done\n", peerName))
 }
 
 func (w *WormholeConnector) SetupSerf() error {

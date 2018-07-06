@@ -100,10 +100,6 @@ func addLogger(next http.Handler) http.Handler {
 }
 
 func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
-	mux.HandleFunc("/v1/serf/peers/get", wc.getSerfPeers).Methods("GET")
-	mux.HandleFunc("/v1/serf/peers/get/{peerName}", wc.getSerfPeer).Methods("GET")
-	mux.HandleFunc("/v1/serf/peers/set/{newPeerName}", wc.setSerfPeers).Methods("POST")
-	mux.HandleFunc("/v1/serf/peers/delete/{peerName}", wc.deleteSerfPeers).Methods("DELETE")
 }
 
 func (w *WormholeConnector) ListenAndServeTLS(cert, key string) {
