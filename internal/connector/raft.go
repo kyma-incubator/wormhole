@@ -85,8 +85,9 @@ func (wc *WormholeConnector) SetupRaft(sigchan chan os.Signal) error {
 	if err != nil {
 		return fmt.Errorf("unable to get new raft: %v", err)
 	}
+	wc.rf = rf
 
-	if err := wc.bootstrapRaft(rf); err != nil {
+	if err := wc.bootstrapRaft(wc.rf); err != nil {
 		return fmt.Errorf("unable to bootstrap raft cluster: %v", err)
 	}
 
@@ -98,12 +99,12 @@ func (wc *WormholeConnector) SetupRaft(sigchan chan os.Signal) error {
 			// catch SIGTERM to quit immediately
 			return nil
 		case <-ticker.C:
-			if err := lib.ProbeRaft(rf, wc.raftAddr); err != nil {
+			if err := lib.ProbeRaft(wc.rf, wc.raftAddr); err != nil {
 				return fmt.Errorf("unable to probe raft peers: %v", err)
 			}
 
 		case ev := <-wc.serfEvents:
-			if err := lib.ProbeSerf(rf, ev); err != nil {
+			if err := lib.ProbeSerf(wc.rf, ev); err != nil {
 				return fmt.Errorf("unable to probe serf peers: %v", err)
 			}
 		}
