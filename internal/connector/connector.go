@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/hashicorp/raft"
 	"github.com/hashicorp/serf/serf"
 	"github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
@@ -32,8 +33,10 @@ import (
 
 type WormholeConnector struct {
 	localAddr string
-	raftAddr  string
-	raftPort  int
+
+	raftAddr string
+	raftPort int
+	rf       *raft.Raft
 
 	serfDB     *lib.SerfDB
 	serfEvents chan serf.Event
@@ -41,6 +44,7 @@ type WormholeConnector struct {
 	serfPort   int
 
 	server  http.Server
+	rpcPort string
 	workDir string
 }
 
@@ -86,6 +90,14 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 		workDir:   config.WorkDir,
 	}
 
+	// Split kymaServer in a format of host:port into parts, and store the 2nd
+	// part into rpcPort. If it's not possible, fall back to 8080.
+	if config.KymaServer != "" && strings.Contains(config.KymaServer, ":") {
+		wc.rpcPort = strings.Split(config.KymaServer, ":")[1]
+	} else {
+		wc.rpcPort = "8080"
+	}
+
 	registerHandlers(m, wc)
 
 	return wc
@@ -99,7 +111,25 @@ func addLogger(next http.Handler) http.Handler {
 	})
 }
 
+func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http.Request) {
+	if wc.rf.VerifyLeader().Error() == nil {
+		// This node is a leader, so there's nothing to do.
+		return
+	}
+
+	// It means this node is not a leader, but a follower.
+	// Redirect every request to the leader.
+	// wc.rf.Leader() returns a string in format of LEADER_IP_ADDRESS:LEADER_RAFT_PORT,
+	// e.g. 172.17.0.2:1112, so we need to split it up to get only the first
+	// part, to append rpcPort, e.g. 8080.
+	leaderAddr := strings.Split(string(wc.rf.Leader()), ":")[0] + ":" + wc.rpcPort
+
+	http.Redirect(w, r, leaderAddr, http.StatusTemporaryRedirect)
+}
+
 func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
+	// redirect every request to the raft leader
+	mux.PathPrefix("/").HandlerFunc(wc.handleLeaderRedirect)
 }
 
 func (w *WormholeConnector) ListenAndServeTLS(cert, key string) {
