@@ -2,14 +2,24 @@ BIN = wormhole-connector
 GOPATH ?= ${GOPATH}
 BINDIR ?= ${GOPATH}/bin
 
-.PHONY: all clean dep install
+.PHONY: all linux aci update-vendor dep clean install
 
 VERSION=$(shell git describe --tags --always --dirty)
 
-all:
+build:
+	go build -i -o $(BIN) \
+		-ldflags "-w -X main.version=$(VERSION)" \
+		./main.go
+
+linux:
+	# Compile statically linked binary for linux.
 	CGO_ENABLED=0 GOOS=linux go build -a -tags -netgo -o $(BIN) \
 		-ldflags "-w -X main.version=$(VERSION)" \
 		./main.go
+
+aci: linux
+	cd aci && \
+		sudo ./build.sh
 
 update-vendor: | dep
 	dep ensure
