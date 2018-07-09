@@ -52,6 +52,7 @@ type WormholeConnector struct {
 type WormholeConnectorConfig struct {
 	KymaServer      string
 	RaftPort        int
+	LocalAddr       string
 	SerfMemberAddrs string
 	SerfPort        int
 	Timeout         time.Duration
@@ -83,7 +84,7 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 	}
 
 	wc := &WormholeConnector{
-		localAddr: localAddr,
+		localAddr: config.LocalAddr,
 		raftPort:  config.RaftPort,
 		serfPeers: peers,
 		serfPort:  config.SerfPort,
