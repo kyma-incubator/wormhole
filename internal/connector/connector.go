@@ -112,7 +112,7 @@ func addLogger(next http.Handler) http.Handler {
 }
 
 func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http.Request) {
-	if wc.rf.VerifyLeader().Error() == nil {
+	if wc.rf.State() == raft.Leader {
 		// This node is a leader, so there's nothing to do.
 		return
 	}
