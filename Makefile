@@ -7,8 +7,8 @@ BINDIR ?= ${GOPATH}/bin
 VERSION=$(shell git describe --tags --always --dirty)
 
 all:
-	go build -i -o $(BIN) \
-		-ldflags "-X main.version=$(VERSION)" \
+	CGO_ENABLED=0 GOOS=linux go build -a -tags -netgo -o $(BIN) \
+		-ldflags "-w -X main.version=$(VERSION)" \
 		./main.go
 
 update-vendor: | dep
