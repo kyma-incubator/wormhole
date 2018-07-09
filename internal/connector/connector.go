@@ -17,6 +17,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -122,9 +123,13 @@ func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http
 	// wc.rf.Leader() returns a string in format of LEADER_IP_ADDRESS:LEADER_RAFT_PORT,
 	// e.g. 172.17.0.2:1112, so we need to split it up to get only the first
 	// part, to append rpcPort, e.g. 8080.
-	leaderAddr := strings.Split(string(wc.rf.Leader()), ":")[0] + ":" + wc.rpcPort
+	leaderHost, _, err := net.SplitHostPort(string(wc.rf.Leader()))
+	if err != nil {
+		return
+	}
 
-	http.Redirect(w, r, leaderAddr, http.StatusTemporaryRedirect)
+	leaderURL := fmt.Sprintf("https://%v:%v", leaderHost, wc.rpcPort)
+	http.Redirect(w, r, leaderURL, http.StatusTemporaryRedirect)
 }
 
 func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
