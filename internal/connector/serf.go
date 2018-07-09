@@ -29,7 +29,6 @@ import (
 )
 
 var (
-	localAddr         string = "127.0.0.1" // TODO: get it resolved via DNS, or configurable
 	defaultSerfDbFile string = "serf.db"
 	defaultBucketName string = "SERFDB"
 	defaultKeyPeers   string = "PEERS"

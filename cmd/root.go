@@ -46,6 +46,7 @@ var (
 	flagSerfMemberAddrs string
 	flagSerfPort        int
 	flagRaftPort        int
+	flagLocalAddr       string
 )
 
 // Execute adds all child commands to the root command sets flags appropriately.
@@ -67,6 +68,7 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&flagSerfMemberAddrs, "serf-member-addrs", "", "a set of IP:Port pairs of each Serf member")
 	RootCmd.PersistentFlags().IntVar(&flagSerfPort, "serf-port", 1111, "port number on which Serf listens (default is 1111)")
 	RootCmd.PersistentFlags().IntVar(&flagRaftPort, "raft-port", 1112, "port number on which Raft listens (default is 1112)")
+	RootCmd.PersistentFlags().StringVar(&flagLocalAddr, "local-addr", "127.0.0.1", "address to bind")
 
 	workDir, _ = os.Getwd()
 }
@@ -91,6 +93,7 @@ func runWormholeConnector(cmd *cobra.Command, args []string) {
 	config := connector.WormholeConnectorConfig{
 		KymaServer:      flagKymaServer,
 		RaftPort:        flagRaftPort,
+		LocalAddr:       flagLocalAddr,
 		SerfMemberAddrs: flagSerfMemberAddrs,
 		SerfPort:        flagSerfPort,
 		Timeout:         flagTimeout,
