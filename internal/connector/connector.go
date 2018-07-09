@@ -126,6 +126,7 @@ func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http
 	// part, to append rpcPort, e.g. 8080.
 	leaderHost, _, err := net.SplitHostPort(string(wc.rf.Leader()))
 	if err != nil {
+		http.Error(w, fmt.Sprintf("%v", err), http.StatusInternalServerError)
 		return
 	}
 
