@@ -119,11 +119,11 @@ func runWormholeConnector(cmd *cobra.Command, args []string) {
 
 	w.ListenAndServeTLS("server.crt", "server.key")
 
-	if err := w.SetupSerf(); err != nil {
+	if err := w.SetupSerfRaft(); err != nil {
 		log.Fatal(err)
 	}
 
-	if err := w.SetupRaft(term); err != nil {
+	if err := w.ProbeSerfRaft(term); err != nil {
 		log.Fatal(err)
 	}
 

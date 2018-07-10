@@ -15,7 +15,6 @@
 package lib
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -67,27 +66,4 @@ func GetNewRaft(dataDir, raftAddr string, raftPort int) (*raft.Raft, error) {
 	}
 
 	return r, nil
-}
-
-func ProbeRaft(rf *raft.Raft, raftAddr string) error {
-	future := rf.VerifyLeader()
-
-	fmt.Printf("Showing peers known by %s:\n", raftAddr)
-	if err := future.Error(); err != nil {
-		fmt.Println("Node is a follower")
-	} else {
-		fmt.Println("Node is leader")
-	}
-
-	cfuture := rf.GetConfiguration()
-	if err := cfuture.Error(); err != nil {
-		return fmt.Errorf("error getting config: %s", err)
-	}
-
-	configuration := cfuture.Configuration()
-	for _, server := range configuration.Servers {
-		fmt.Println(server.Address)
-	}
-
-	return nil
 }
