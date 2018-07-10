@@ -46,7 +46,7 @@ type WormholeConnector struct {
 
 	server  http.Server
 	rpcPort string
-	workDir string
+	dataDir string
 }
 
 type WormholeConnectorConfig struct {
@@ -56,7 +56,7 @@ type WormholeConnectorConfig struct {
 	SerfMemberAddrs string
 	SerfPort        int
 	Timeout         time.Duration
-	WorkDir         string
+	DataDir         string
 }
 
 func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
@@ -89,7 +89,7 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 		serfPeers: peers,
 		serfPort:  config.SerfPort,
 		server:    srv,
-		workDir:   config.WorkDir,
+		dataDir:   config.DataDir,
 	}
 
 	// Split kymaServer in a format of host:port into parts, and store the 2nd

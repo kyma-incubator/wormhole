@@ -39,8 +39,11 @@ var (
 		Run:   runWormholeConnector,
 	}
 
-	workDir string
+	defaultDataDir = fmt.Sprintf("%s/.config/wormhole-connector", os.Getenv("HOME"))
 
+	dataDir string
+
+	flagDataDir         string
 	flagKymaServer      string
 	flagTimeout         time.Duration
 	flagSerfMemberAddrs string
@@ -62,15 +65,23 @@ func Execute() error {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.connector.yaml)")
+	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.config/wormhole-connector/connector.yaml)")
 	RootCmd.PersistentFlags().StringVar(&flagKymaServer, "kyma-server", "localhost:8080", "Kyma server address")
 	RootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 5*time.Minute, "Timeout for the HTTP/2 connection")
 	RootCmd.PersistentFlags().StringVar(&flagSerfMemberAddrs, "serf-member-addrs", "", "a set of IP:Port pairs of each Serf member")
 	RootCmd.PersistentFlags().IntVar(&flagSerfPort, "serf-port", 1111, "port number on which Serf listens (default is 1111)")
 	RootCmd.PersistentFlags().IntVar(&flagRaftPort, "raft-port", 1112, "port number on which Raft listens (default is 1112)")
 	RootCmd.PersistentFlags().StringVar(&flagLocalAddr, "local-addr", "127.0.0.1", "address to bind")
+	RootCmd.PersistentFlags().StringVar(&flagDataDir, "data-dir", defaultDataDir, "data directory to store state")
 
-	workDir, _ = os.Getwd()
+	viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
+	viper.BindPFlag("kymaServer", RootCmd.PersistentFlags().Lookup("kyma-server"))
+	viper.BindPFlag("timeout", RootCmd.PersistentFlags().Lookup("timeout"))
+	viper.BindPFlag("serf.memberAddrs", RootCmd.PersistentFlags().Lookup("serf-member-addrs"))
+	viper.BindPFlag("serf.port", RootCmd.PersistentFlags().Lookup("serf-port"))
+	viper.BindPFlag("raft.port", RootCmd.PersistentFlags().Lookup("raft-port"))
+	viper.BindPFlag("localAddr", RootCmd.PersistentFlags().Lookup("local-addr"))
+	viper.BindPFlag("dataDir", RootCmd.PersistentFlags().Lookup("data-dir"))
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -79,9 +90,10 @@ func initConfig() {
 		viper.SetConfigFile(cfgFile)
 	}
 
-	viper.SetConfigName(".connector") // name of config file (without extension)
-	viper.AddConfigPath("$HOME")      // adding home directory as first search path
-	viper.AutomaticEnv()              // read in environment variables that match
+	viper.SetConfigName("connector")                        // name of config file (without extension)
+	viper.AddConfigPath("/etc/wormhole-connector")          // adding home directory as first search path
+	viper.AddConfigPath("$HOME/.config/wormhole-connector") // adding home directory as first search path
+	viper.AutomaticEnv()                                    // read in environment variables that match
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
@@ -91,13 +103,13 @@ func initConfig() {
 
 func runWormholeConnector(cmd *cobra.Command, args []string) {
 	config := connector.WormholeConnectorConfig{
-		KymaServer:      flagKymaServer,
-		RaftPort:        flagRaftPort,
-		LocalAddr:       flagLocalAddr,
-		SerfMemberAddrs: flagSerfMemberAddrs,
-		SerfPort:        flagSerfPort,
-		Timeout:         flagTimeout,
-		WorkDir:         workDir,
+		KymaServer:      viper.GetString("kymaServer"),
+		RaftPort:        viper.GetInt("raft.port"),
+		LocalAddr:       viper.GetString("localAddr"),
+		SerfMemberAddrs: viper.GetString("serf.memberAddrs"),
+		SerfPort:        viper.GetInt("serf.port"),
+		Timeout:         viper.GetDuration("timeout"),
+		DataDir:         viper.GetString("dataDir"),
 	}
 
 	term := make(chan os.Signal, 2)

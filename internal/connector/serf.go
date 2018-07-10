@@ -61,7 +61,7 @@ func (w *WormholeConnector) InitSerfDB(dbPath string) error {
 func (w *WormholeConnector) SetupSerf() error {
 	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", w.localAddr, w.serfPort))))
 
-	serfDataDir := filepath.Join(w.workDir, "tmp/serf", id)
+	serfDataDir := filepath.Join(w.dataDir, "serf", id)
 	if err := os.MkdirAll(serfDataDir, os.FileMode(0755)); err != nil {
 		return fmt.Errorf("unable to create directory %s: %v", serfDataDir, err)
 	}
