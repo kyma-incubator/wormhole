@@ -78,6 +78,10 @@ func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) *
 }
 
 func (ws *WormholeSerf) InitSerfDB(dbPath string) error {
+	if _, err := os.Create(dbPath); err != nil {
+		return fmt.Errorf("unable to create an empty file %s: %v", dbPath, err)
+	}
+
 	boltdb, err := bolt.Open(dbPath, 0600, &bolt.Options{
 		Timeout: 2 * time.Second,
 	})
