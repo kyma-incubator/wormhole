@@ -88,7 +88,6 @@ func GetNewSerf(serfAddr string, serfPort int, serfEvents chan serf.Event) (*ser
 	memberlistConfig.LogOutput = os.Stdout
 
 	serfConfig := serf.DefaultConfig()
-	serfConfig.Init()
 	serfConfig.NodeName = fmt.Sprintf("%s:%d", serfAddr, serfPort)
 	serfConfig.EventCh = serfEvents
 	serfConfig.MemberlistConfig = memberlistConfig
