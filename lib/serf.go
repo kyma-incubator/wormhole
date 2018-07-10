@@ -18,11 +18,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 
 	bolt "github.com/coreos/bbolt"
 	"github.com/hashicorp/memberlist"
-	"github.com/hashicorp/raft"
 	"github.com/hashicorp/serf/serf"
 )
 
@@ -101,38 +99,14 @@ func GetNewSerf(serfAddr string, serfPort int, serfEvents chan serf.Event) (*ser
 	return s, nil
 }
 
-func ProbeSerf(rf *raft.Raft, ev serf.Event) error {
-	leader := rf.VerifyLeader()
-	memberEvent, ok := ev.(serf.MemberEvent)
-	if !ok {
-		return nil
+func IsMemberEventFailed(event serf.MemberEvent) bool {
+	switch event.EventType() {
+	case serf.EventMemberLeave:
+		fallthrough
+	case serf.EventMemberFailed:
+		fallthrough
+	case serf.EventMemberReap:
+		return true
 	}
-
-	for _, member := range memberEvent.Members {
-		changedPeer := member.Addr.String() + ":" + strconv.Itoa(int(member.Port+1))
-		if memberEvent.EventType() == serf.EventMemberJoin {
-			if leader.Error() != nil {
-				continue
-			}
-
-			indexFuture := rf.AddVoter(raft.ServerID(changedPeer), raft.ServerAddress(changedPeer), 0, 0)
-			if err := indexFuture.Error(); err != nil {
-				return fmt.Errorf("error adding voter: %s", err)
-			}
-		} else if memberEvent.EventType() == serf.EventMemberLeave ||
-			memberEvent.EventType() == serf.EventMemberFailed ||
-			memberEvent.EventType() == serf.EventMemberReap {
-			if leader.Error() != nil {
-				continue
-			}
-
-			indexFuture := rf.RemoveServer(raft.ServerID(changedPeer), 0, 0)
-
-			if err := indexFuture.Error(); err != nil {
-				return fmt.Errorf("error removing server: %s", err)
-			}
-		}
-	}
-
-	return nil
+	return false
 }

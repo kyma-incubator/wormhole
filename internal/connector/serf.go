@@ -29,12 +29,55 @@ import (
 )
 
 var (
-	defaultSerfDbFile string = "serf.db"
-	defaultBucketName string = "SERFDB"
-	defaultKeyPeers   string = "PEERS"
+	defaultSerfDbFile   string = "serf.db"
+	defaultBucketName   string = "SERFDB"
+	defaultKeyPeers     string = "PEERS"
+	defaultSerfChannels int    = 16
 )
 
-func (w *WormholeConnector) InitSerfDB(dbPath string) error {
+type WormholeSerf struct {
+	wc *WormholeConnector
+
+	serfDB     *lib.SerfDB
+	serfEvents chan serf.Event
+	serfPeers  []lib.SerfPeer
+	serfPort   int
+	sf         *serf.Serf
+}
+
+func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) *WormholeSerf {
+	ws := &WormholeSerf{
+		wc: pWc,
+
+		serfPeers: sPeers,
+		serfPort:  sPort,
+	}
+
+	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", ws.wc.localAddr, ws.serfPort))))
+
+	serfDataDir := filepath.Join(ws.wc.dataDir, "serf", id)
+	if err := os.MkdirAll(serfDataDir, os.FileMode(0755)); err != nil {
+		log.Printf("unable to create directory %s: %v", serfDataDir, err)
+		return nil
+	}
+
+	if err := ws.InitSerfDB(filepath.Join(serfDataDir, defaultSerfDbFile)); err != nil {
+		log.Printf("unable to initialize serf db: %v", err)
+		return nil
+	}
+
+	var err error
+	ws.serfEvents = make(chan serf.Event, defaultSerfChannels)
+	ws.sf, err = lib.GetNewSerf(ws.wc.localAddr, ws.serfPort, ws.serfEvents)
+	if err != nil {
+		log.Printf("unable to get new serf: %v", err)
+		return nil
+	}
+
+	return ws
+}
+
+func (ws *WormholeSerf) InitSerfDB(dbPath string) error {
 	boltdb, err := bolt.Open(dbPath, 0600, &bolt.Options{
 		Timeout: 2 * time.Second,
 	})
@@ -49,7 +92,7 @@ func (w *WormholeConnector) InitSerfDB(dbPath string) error {
 		return nil
 	})
 
-	w.serfDB = &lib.SerfDB{
+	ws.serfDB = &lib.SerfDB{
 		BoltDB:         boltdb,
 		SerfBucketName: defaultBucketName,
 		SerfKeyPeers:   defaultKeyPeers,
@@ -58,39 +101,36 @@ func (w *WormholeConnector) InitSerfDB(dbPath string) error {
 	return nil
 }
 
-func (w *WormholeConnector) SetupSerf() error {
-	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", w.localAddr, w.serfPort))))
-
-	serfDataDir := filepath.Join(w.dataDir, "serf", id)
-	if err := os.MkdirAll(serfDataDir, os.FileMode(0755)); err != nil {
-		return fmt.Errorf("unable to create directory %s: %v", serfDataDir, err)
-	}
-
-	if err := w.InitSerfDB(filepath.Join(serfDataDir, defaultSerfDbFile)); err != nil {
-		return fmt.Errorf("unable to initialize serf db: %v", err)
-	}
-
-	w.serfEvents = make(chan serf.Event, 16)
-	sf, err := lib.GetNewSerf(w.localAddr, w.serfPort, w.serfEvents)
-	if err != nil {
-		return fmt.Errorf("unable to get new serf: %v", err)
-	}
-
-	if len(w.serfPeers) == 0 {
+func (ws *WormholeSerf) SetupSerf() error {
+	if len(ws.serfPeers) == 0 {
 		log.Println("empty serf peers list, nothing to do.")
 		return nil
 	}
 
 	// Join an existing cluster by specifying at least one known member.
 	addrs := []string{}
-	for _, p := range w.serfPeers {
+	for _, p := range ws.serfPeers {
 		addrs = append(addrs, p.Address)
 	}
-	numJoined, err := sf.Join(addrs, false)
+	numJoined, err := ws.sf.Join(addrs, false)
 	if err != nil {
 		return fmt.Errorf("unable to join an existing serf cluster: %v", err)
 	}
 
 	log.Printf("successfully joined %d peers\n", numJoined)
 	return nil
+}
+
+func (ws *WormholeSerf) Shutdown() {
+	if err := ws.serfDB.BoltDB.Close(); err != nil {
+		fmt.Printf("cannot close DB\n")
+	}
+}
+
+func (ws *WormholeSerf) GetPeerAddrs() []string {
+	peers := []string{}
+	for _, p := range ws.serfPeers {
+		peers = append(peers, p.Address)
+	}
+	return peers
 }

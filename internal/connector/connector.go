@@ -19,30 +19,25 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/hashicorp/raft"
-	"github.com/hashicorp/serf/serf"
 	"github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 
+	"github.com/hashicorp/serf/serf"
 	"github.com/kinvolk/wormhole-connector/lib"
 )
 
 type WormholeConnector struct {
 	localAddr string
 
-	raftAddr string
-	raftPort int
-	rf       *raft.Raft
-
-	serfDB     *lib.SerfDB
-	serfEvents chan serf.Event
-	serfPeers  []lib.SerfPeer
-	serfPort   int
+	WRaft *WormholeRaft
+	WSerf *WormholeSerf
 
 	server  http.Server
 	rpcPort string
@@ -85,12 +80,12 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 
 	wc := &WormholeConnector{
 		localAddr: config.LocalAddr,
-		raftPort:  config.RaftPort,
-		serfPeers: peers,
-		serfPort:  config.SerfPort,
 		server:    srv,
 		dataDir:   config.DataDir,
 	}
+
+	wc.WRaft = NewWormholeRaft(wc, config.LocalAddr, config.RaftPort, config.DataDir)
+	wc.WSerf = NewWormholeSerf(wc, peers, config.SerfPort)
 
 	// Split kymaServer in a format of host:port into parts, and store the 2nd
 	// part into rpcPort. If it's not possible, fall back to 8080.
@@ -114,17 +109,18 @@ func addLogger(next http.Handler) http.Handler {
 }
 
 func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http.Request) {
-	if wc.rf.State() == raft.Leader {
+	wr := wc.WRaft
+	if wr.IsLeader() {
 		// This node is a leader, so there's nothing to do.
 		return
 	}
 
 	// It means this node is not a leader, but a follower.
 	// Redirect every request to the leader.
-	// wc.rf.Leader() returns a string in format of LEADER_IP_ADDRESS:LEADER_RAFT_PORT,
+	// wr.rf.Leader() returns a string in format of LEADER_IP_ADDRESS:LEADER_RAFT_PORT,
 	// e.g. 172.17.0.2:1112, so we need to split it up to get only the first
 	// part, to append rpcPort, e.g. 8080.
-	leaderAddress := string(wc.rf.Leader())
+	leaderAddress := string(wr.rf.Leader())
 
 	if leaderAddress == "" {
 		// there's no leader, so let's return a special error message
@@ -159,12 +155,7 @@ func (w *WormholeConnector) ListenAndServeTLS(cert, key string) {
 
 func (w *WormholeConnector) Shutdown(ctx context.Context) {
 	w.server.Shutdown(ctx)
-
-	defer func() {
-		if err := w.serfDB.BoltDB.Close(); err != nil {
-			fmt.Printf("cannot close DB\n")
-		}
-	}()
+	w.WSerf.Shutdown()
 }
 
 func getLogger(ctx context.Context) *log.Entry {
@@ -173,4 +164,66 @@ func getLogger(ctx context.Context) *log.Entry {
 		return nil
 	}
 	return logger
+}
+
+func (wc *WormholeConnector) SetupSerfRaft() error {
+	if err := wc.WSerf.SetupSerf(); err != nil {
+		return err
+	}
+
+	if err := wc.WRaft.BootstrapRaft(wc.WSerf.GetPeerAddrs()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (wc *WormholeConnector) ProbeSerfRaft(sigchan chan os.Signal) error {
+	ticker := time.NewTicker(3 * time.Second)
+
+	for {
+		select {
+		case <-sigchan:
+			// catch SIGTERM to quit immediately
+			return nil
+		case <-ticker.C:
+			if err := wc.WRaft.VerifyRaft(); err != nil {
+				return fmt.Errorf("unable to probe raft peers: %v", err)
+			}
+
+		case ev := <-wc.WSerf.serfEvents:
+			if err := wc.HandleSerfEvents(ev); err != nil {
+				return fmt.Errorf("unable to probe serf peers: %v", err)
+			}
+		}
+	}
+}
+
+func (wc *WormholeConnector) HandleSerfEvents(ev serf.Event) error {
+	wraft := wc.WRaft
+	memberEvent, ok := ev.(serf.MemberEvent)
+	if !ok {
+		return nil
+	}
+
+	for _, member := range memberEvent.Members {
+		changedPeer := member.Addr.String() + ":" + strconv.Itoa(int(member.Port+1))
+		if memberEvent.EventType() == serf.EventMemberJoin {
+			if !wraft.IsLeader() {
+				continue
+			}
+			if err := wraft.AddVoter(changedPeer); err != nil {
+				return err
+			}
+		} else if lib.IsMemberEventFailed(memberEvent) {
+			if !wraft.IsLeader() {
+				continue
+			}
+			if err := wraft.RemoveServer(changedPeer); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
