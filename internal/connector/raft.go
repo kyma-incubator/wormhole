@@ -29,7 +29,7 @@ import (
 func (wc *WormholeConnector) getNewRaft() (*raft.Raft, error) {
 	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", wc.localAddr, wc.raftPort))))
 
-	raftDataBase := filepath.Join(wc.workDir, "tmp/raft")
+	raftDataBase := filepath.Join(wc.dataDir, "raft")
 	if err := os.MkdirAll(raftDataBase, os.FileMode(0755)); err != nil {
 		return nil, err
 	}
