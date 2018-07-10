@@ -40,6 +40,7 @@ type WormholeConnector struct {
 	WRaft *WormholeRaft
 	WSerf *WormholeSerf
 
+	events  *lib.EventsFSM
 	server  *http.Server
 	rpcPort string
 	dataDir string
@@ -86,10 +87,13 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 		})
 	}
 
+	events := lib.NewEventsFSM()
+
 	wc := &WormholeConnector{
 		localAddr: config.LocalAddr,
 		server:    &srv,
 		dataDir:   config.DataDir,
+		events:    events,
 	}
 
 	wc.WRaft = NewWormholeRaft(wc, config.LocalAddr, config.RaftPort, config.DataDir)
@@ -111,7 +115,8 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http.Request) {
 	wr := wc.WRaft
 	if wr.IsLeader() {
-		// This node is a leader, so there's nothing to do.
+		// This node is a leader, handle the real request
+		wc.handleEvents(w, r)
 		return
 	}
 
@@ -136,6 +141,22 @@ func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http
 
 	leaderURL := fmt.Sprintf("https://%v:%v", leaderHost, wc.rpcPort)
 	http.Redirect(w, r, leaderURL, http.StatusTemporaryRedirect)
+}
+
+func (wc *WormholeConnector) handleEvents(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		event := wc.events.TopEvent()
+		w.Write([]byte(string(event)))
+	case "POST":
+		event := r.FormValue("event")
+		wc.EnqueueEvent(event)
+	case "DELETE":
+		wc.DiscardTopEvent()
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 }
 
 func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
@@ -237,5 +258,31 @@ func (wc *WormholeConnector) handleSerfEvents(ev serf.Event) error {
 		}
 	}
 
+	return nil
+}
+
+func (wr *WormholeConnector) EnqueueEvent(ev string) error {
+	if wr.WRaft != nil {
+		if wr.WRaft.IsLeader() {
+			return wr.WRaft.EnqueueEvent(ev, 10*time.Second)
+		} else {
+			log.Infof("is not leader, skip")
+		}
+	} else {
+		wr.events.EnqueueEvent(ev)
+	}
+	return nil
+}
+
+func (wr *WormholeConnector) DiscardTopEvent() error {
+	if wr.WRaft != nil {
+		if wr.WRaft.IsLeader() {
+			return wr.WRaft.DiscardTopEvent(10 * time.Second)
+		} else {
+			log.Infof("is not leader, skip")
+		}
+	} else {
+		wr.events.DiscardTopEvent()
+	}
 	return nil
 }
