@@ -16,10 +16,12 @@ package connector
 
 import (
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/hashicorp/raft"
 	"github.com/kinvolk/wormhole-connector/lib"
@@ -35,7 +37,7 @@ type WormholeRaft struct {
 	rf                 *raft.Raft
 }
 
-func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, id, dataDir string) (*raft.Raft, error) {
+func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, fsm raft.FSM, id, dataDir string) (*raft.Raft, error) {
 	raftDataBase := filepath.Join(dataDir, "raft")
 	if err := os.MkdirAll(raftDataBase, os.FileMode(0755)); err != nil {
 		return nil, err
@@ -50,7 +52,7 @@ func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, id, dataDir s
 		return nil, err
 	}
 
-	rf, err := lib.GetNewRaft(raftDataDir, raftListenPeerAddr, raftListenPeerPort)
+	rf, err := lib.GetNewRaft(raftDataDir, raftListenPeerAddr, raftListenPeerPort, fsm)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +66,7 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 	rAddr := lAddr + ":" + strconv.Itoa(rPort)
 	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", lAddr, rPort))))
 
-	newRf, err := getNewRaft(rAddr, rPort, id, dataDir)
+	newRf, err := getNewRaft(rAddr, rPort, pWc.events, id, dataDir)
 	if err != nil {
 		return nil
 	}
@@ -154,4 +156,32 @@ func (wr *WormholeRaft) RemoveServer(changedPeer string) error {
 		return fmt.Errorf("error removing server: %s", err)
 	}
 	return nil
+}
+
+func (wr *WormholeRaft) apply(a *lib.Action, timeout time.Duration) error {
+	data, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+
+	f := wr.rf.Apply(data, timeout)
+	return f.Error()
+}
+
+func (wr *WormholeRaft) EnqueueEvent(ev string, timeout time.Duration) error {
+	var a = lib.Action{
+		Cmd:   lib.EnqueueCmd,
+		Event: ev,
+	}
+
+	return wr.apply(&a, timeout)
+}
+
+func (wr *WormholeRaft) DiscardTopEvent(timeout time.Duration) error {
+	var a = lib.Action{
+		Cmd:   lib.DiscardCmd,
+		Event: "",
+	}
+
+	return wr.apply(&a, timeout)
 }

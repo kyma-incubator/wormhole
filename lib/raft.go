@@ -15,9 +15,12 @@
 package lib
 
 import (
+	"encoding/json"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/raft"
@@ -28,25 +31,115 @@ var (
 	defaultTransportTimeout = 10 * time.Second
 )
 
-type fsm struct {
+// EventsFSM is a Finite State Machine representing events (for now they're
+// stored as simple strings).
+//
+// The raft library uses an FSM as an abstraction to allow the current state of
+// the cluster to be replicated to other nodes. We implement the Apply()
+// operation defined in the FSM interface to take advantage of this.
+//
+// Since restoring the state of the FSM must result in the same state as a full
+// replay of the raft logs, the raft library can capture the FSM state at a
+// point in time and then remove all the logs used to reach that state, this is
+// performed automatically to avoid unbound log growth. We implement the
+// Snapshot() and Restore() operations defined in the FSM interface and the
+// Persist() operation defined in the FSMSnapshot interface to take advantage
+// of this.
+type EventsFSM struct {
+	sync.Mutex
+
+	Events []string
 }
 
-func (f *fsm) Apply(*raft.Log) interface{} {
+func NewEventsFSM() *EventsFSM {
+	fsm := new(EventsFSM)
+
+	return fsm
+}
+
+const (
+	EnqueueCmd = "enqueue"
+	DiscardCmd = "discard"
+)
+
+type Action struct {
+	Cmd   string `json:"cmd"`
+	Event string `json:"event"`
+}
+
+func (fsm *EventsFSM) HandleAction(a *Action) {
+	switch a.Cmd {
+	case EnqueueCmd:
+		fsm.EnqueueEvent(a.Event)
+	case DiscardCmd:
+		fsm.DiscardTopEvent()
+	}
+}
+
+func (f *EventsFSM) Apply(l *raft.Log) interface{} {
+	var a Action
+	if err := json.Unmarshal(l.Data, &a); err != nil {
+		log.Printf("error decoding raft log: %v", err)
+		return err
+	}
+
+	f.HandleAction(&a)
+
 	return nil
 }
 
-func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {
-	return nil, nil
+func (f *EventsFSM) Snapshot() (raft.FSMSnapshot, error) {
+	snap := new(eventsSnapshot)
+	snap.events = make([]string, 0, len(f.Events))
+
+	f.Lock()
+	for _, e := range f.Events {
+		snap.events = append(snap.events, e)
+	}
+	f.Unlock()
+
+	return snap, nil
 }
 
-func (f *fsm) Restore(io.ReadCloser) error {
+func (f *EventsFSM) Restore(snap io.ReadCloser) error {
+	defer snap.Close()
+
+	d := json.NewDecoder(snap)
+	var events []string
+
+	if err := d.Decode(&events); err != nil {
+		return err
+	}
+
+	f.Lock()
+	for _, e := range events {
+		f.Events = append(f.Events, e)
+	}
+	f.Unlock()
+
 	return nil
 }
 
-// GetNewRaft returns the default Raft object, which includes for example,
+type eventsSnapshot struct {
+	events []string
+}
+
+func (snap *eventsSnapshot) Persist(sink raft.SnapshotSink) error {
+	data, _ := json.Marshal(snap.events)
+	_, err := sink.Write(data)
+	if err != nil {
+		sink.Cancel()
+	}
+	return err
+}
+
+func (snap *eventsSnapshot) Release() {
+}
+
 // a local ID, FSM(Finite State Machine), logstore and snapshotstore, and
 // a TCP transport.
-func GetNewRaft(dataDir, raftAddr string, raftPort int) (*raft.Raft, error) {
+
+func GetNewRaft(dataDir, raftAddr string, raftPort int, fsm raft.FSM) (*raft.Raft, error) {
 	raftDBPath := filepath.Join(dataDir, "raft.db")
 	raftDB, err := boltdb.NewBoltStore(raftDBPath)
 	if err != nil {
@@ -67,10 +160,39 @@ func GetNewRaft(dataDir, raftAddr string, raftPort int) (*raft.Raft, error) {
 	c.LogOutput = os.Stdout
 	c.LocalID = raft.ServerID(raftAddr)
 
-	r, err := raft.NewRaft(c, &fsm{}, raftDB, raftDB, snapshotStore, trans)
+	r, err := raft.NewRaft(c, fsm, raftDB, raftDB, snapshotStore, trans)
 	if err != nil {
 		return nil, err
 	}
 
 	return r, nil
+}
+
+func (fsm *EventsFSM) EnqueueEvent(ev string) {
+	fsm.Lock()
+	defer fsm.Unlock()
+
+	fsm.Events = append(fsm.Events, ev)
+}
+
+func (fsm *EventsFSM) DiscardTopEvent() {
+	fsm.Lock()
+	defer fsm.Unlock()
+
+	if len(fsm.Events) == 0 {
+		return
+	}
+
+	fsm.Events = fsm.Events[1:]
+}
+
+func (fsm *EventsFSM) TopEvent() string {
+	fsm.Lock()
+	defer fsm.Unlock()
+
+	if len(fsm.Events) == 0 {
+		return ""
+	}
+
+	return fsm.Events[0]
 }
