@@ -124,9 +124,17 @@ func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http
 	// wc.rf.Leader() returns a string in format of LEADER_IP_ADDRESS:LEADER_RAFT_PORT,
 	// e.g. 172.17.0.2:1112, so we need to split it up to get only the first
 	// part, to append rpcPort, e.g. 8080.
-	leaderHost, _, err := net.SplitHostPort(string(wc.rf.Leader()))
+	leaderAddress := string(wc.rf.Leader())
+
+	if leaderAddress == "" {
+		// there's no leader, so let's return a special error message
+		http.Error(w, "unable to get leader address, as there's no leader", http.StatusInternalServerError)
+		return
+	}
+
+	leaderHost, _, err := net.SplitHostPort(leaderAddress)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("%v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("unable to parse leader address: %v", err), http.StatusInternalServerError)
 		return
 	}
 
