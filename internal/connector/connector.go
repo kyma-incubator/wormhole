@@ -89,9 +89,9 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 
 	// Split kymaServer in a format of host:port into parts, and store the 2nd
 	// part into rpcPort. If it's not possible, fall back to 8080.
-	if config.KymaServer != "" && strings.Contains(config.KymaServer, ":") {
-		wc.rpcPort = strings.Split(config.KymaServer, ":")[1]
-	} else {
+	var errSplit error
+	_, wc.rpcPort, errSplit = net.SplitHostPort(config.KymaServer)
+	if errSplit != nil {
 		wc.rpcPort = "8080"
 	}
 
