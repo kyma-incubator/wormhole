@@ -167,6 +167,10 @@ func getLogger(ctx context.Context) *log.Entry {
 }
 
 func (wc *WormholeConnector) SetupSerfRaft() error {
+	if wc.WSerf == nil || wc.WRaft == nil {
+		return fmt.Errorf("unable to set up serf and raft. WSerf == %v, WRaft == %v", wc.WSerf, wc.WRaft)
+	}
+
 	if err := wc.WSerf.SetupSerf(); err != nil {
 		return err
 	}
