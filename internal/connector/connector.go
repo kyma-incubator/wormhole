@@ -39,7 +39,7 @@ type WormholeConnector struct {
 	WRaft *WormholeRaft
 	WSerf *WormholeSerf
 
-	server  http.Server
+	server  *http.Server
 	rpcPort string
 	dataDir string
 }
@@ -80,7 +80,7 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 
 	wc := &WormholeConnector{
 		localAddr: config.LocalAddr,
-		server:    srv,
+		server:    &srv,
 		dataDir:   config.DataDir,
 	}
 
