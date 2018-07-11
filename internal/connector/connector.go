@@ -33,6 +33,8 @@ import (
 	"github.com/kinvolk/wormhole-connector/lib"
 )
 
+// WormholeConnector is a core structure for handling communication of a
+// wormhole connector, such as HTTP2 connections, Serf and Raft.
 type WormholeConnector struct {
 	localAddr string
 
@@ -44,6 +46,8 @@ type WormholeConnector struct {
 	dataDir string
 }
 
+// WormholeConnectorConfig holds all kinds of configurations given by users or
+// local config files. It is used when initializing a new wormhole connector.
 type WormholeConnectorConfig struct {
 	KymaServer      string
 	RaftPort        int
@@ -54,6 +58,11 @@ type WormholeConnectorConfig struct {
 	DataDir         string
 }
 
+// NewWormholeConnector returns a new wormhole connector, which holds e.g.,
+// local IP address, http server, location of data directory, and pointers to
+// WormholeSerf & WormholeRaft structures. This function implicitly initializes
+// both WormholeSerf and WormholeRaft, and registers necessary HTTP handlers
+// as well.
 func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 	var srv http.Server
 
@@ -101,8 +110,9 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 }
 
 func addLogger(next http.Handler) http.Handler {
+	type loggerKey string
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), "logger", log.WithFields(log.Fields{
+		ctx := context.WithValue(r.Context(), loggerKey("logger"), log.WithFields(log.Fields{
 			"request_id": uuid.NewV4()}))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -143,9 +153,10 @@ func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
 	mux.PathPrefix("/").HandlerFunc(wc.handleLeaderRedirect)
 }
 
-func (w *WormholeConnector) ListenAndServeTLS(cert, key string) {
+// ListenAndServeTLS spawns a goroutine that runs http.ListenAndServeTLS.
+func (wc *WormholeConnector) ListenAndServeTLS(cert, key string) {
 	go func() {
-		if err := w.server.ListenAndServeTLS(cert, key); err != nil {
+		if err := wc.server.ListenAndServeTLS(cert, key); err != nil {
 			if err != http.ErrServerClosed {
 				log.Fatal(err)
 			}
@@ -153,9 +164,11 @@ func (w *WormholeConnector) ListenAndServeTLS(cert, key string) {
 	}()
 }
 
-func (w *WormholeConnector) Shutdown(ctx context.Context) {
-	w.server.Shutdown(ctx)
-	w.WSerf.Shutdown()
+// Shutdown shuts down the http server of WormholeConnector, and it also
+// destroys its Serf object.
+func (wc *WormholeConnector) Shutdown(ctx context.Context) {
+	wc.server.Shutdown(ctx)
+	wc.WSerf.Shutdown()
 }
 
 func getLogger(ctx context.Context) *log.Entry {
@@ -166,6 +179,8 @@ func getLogger(ctx context.Context) *log.Entry {
 	return logger
 }
 
+// SetupSerfRaft initializes a Serf cluster being joined by the given peers,
+// and it bootstraps a Raft cluster with the peers.
 func (wc *WormholeConnector) SetupSerfRaft() error {
 	if wc.WSerf == nil || wc.WRaft == nil {
 		return fmt.Errorf("unable to set up serf and raft. WSerf == %v, WRaft == %v", wc.WSerf, wc.WRaft)
@@ -182,6 +197,8 @@ func (wc *WormholeConnector) SetupSerfRaft() error {
 	return nil
 }
 
+// ProbeSerfRaft goes into a loop where Raft status becomes verified, and
+// serf events are handled correspondently.
 func (wc *WormholeConnector) ProbeSerfRaft(sigchan chan os.Signal) error {
 	ticker := time.NewTicker(3 * time.Second)
 
@@ -196,14 +213,14 @@ func (wc *WormholeConnector) ProbeSerfRaft(sigchan chan os.Signal) error {
 			}
 
 		case ev := <-wc.WSerf.serfEvents:
-			if err := wc.HandleSerfEvents(ev); err != nil {
+			if err := wc.handleSerfEvents(ev); err != nil {
 				return fmt.Errorf("unable to probe serf peers: %v", err)
 			}
 		}
 	}
 }
 
-func (wc *WormholeConnector) HandleSerfEvents(ev serf.Event) error {
+func (wc *WormholeConnector) handleSerfEvents(ev serf.Event) error {
 	wraft := wc.WRaft
 	memberEvent, ok := ev.(serf.MemberEvent)
 	if !ok {

@@ -29,12 +29,14 @@ import (
 )
 
 var (
-	defaultSerfDbFile   string = "serf.db"
-	defaultBucketName   string = "SERFDB"
-	defaultKeyPeers     string = "PEERS"
-	defaultSerfChannels int    = 16
+	defaultSerfDbFile   = "serf.db"
+	defaultBucketName   = "SERFDB"
+	defaultKeyPeers     = "PEERS"
+	defaultSerfChannels = 16
 )
 
+// WormholeSerf holds runtime informations for Serf, such as database,
+// events, peers, and TCP transport information.
 type WormholeSerf struct {
 	wc *WormholeConnector
 
@@ -45,6 +47,8 @@ type WormholeSerf struct {
 	sf         *serf.Serf
 }
 
+// NewWormholeSerf returns a new wormhole serf object, which holds e.g.,
+// database, events, peers, and TCP transport information.
 func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) *WormholeSerf {
 	ws := &WormholeSerf{
 		wc: pWc,
@@ -77,6 +81,8 @@ func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) *
 	return ws
 }
 
+// InitSerfDB opens the database, initializes the database with the default
+// bucket name.
 func (ws *WormholeSerf) InitSerfDB(dbPath string) error {
 	if _, err := os.Create(dbPath); err != nil {
 		return fmt.Errorf("unable to create an empty file %s: %v", dbPath, err)
@@ -105,6 +111,7 @@ func (ws *WormholeSerf) InitSerfDB(dbPath string) error {
 	return nil
 }
 
+// SetupSerf makes every given Serf peer join the Serf cluster.
 func (ws *WormholeSerf) SetupSerf() error {
 	if len(ws.serfPeers) == 0 {
 		log.Println("empty serf peers list, nothing to do.")
@@ -125,12 +132,15 @@ func (ws *WormholeSerf) SetupSerf() error {
 	return nil
 }
 
+// Shutdown destroys everything for Serf before shutting down the wormhole
+// connector.
 func (ws *WormholeSerf) Shutdown() {
 	if err := ws.serfDB.BoltDB.Close(); err != nil {
 		fmt.Printf("cannot close DB\n")
 	}
 }
 
+// GetPeerAddrs returns a list of IP addresses of Serf peers.
 func (ws *WormholeSerf) GetPeerAddrs() []string {
 	peers := []string{}
 	for _, p := range ws.serfPeers {

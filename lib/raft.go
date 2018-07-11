@@ -39,6 +39,9 @@ func (f *fsm) Restore(io.ReadCloser) error {
 	return nil
 }
 
+// GetNewRaft returns the default Raft object, which includes for example,
+// a local ID, FSM(Finite State Machine), boltdb stores for logstore and
+// snapshotstore, and a TCP transport.
 func GetNewRaft(dataDir, raftAddr string, raftPort int) (*raft.Raft, error) {
 	raftDBPath := filepath.Join(dataDir, "raft.db")
 	raftDB, err := boltdb.NewBoltStore(raftDBPath)

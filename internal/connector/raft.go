@@ -25,6 +25,8 @@ import (
 	"github.com/kinvolk/wormhole-connector/lib"
 )
 
+// WormholeRaft holds runtime informations for Raft, such as IP address,
+// TCP port, and a pointer to the underlying Raft structure.
 type WormholeRaft struct {
 	wc *WormholeConnector
 
@@ -56,6 +58,8 @@ func getNewRaft(raftAddr string, raftPort int, id, dataDir string) (*raft.Raft, 
 	return rf, nil
 }
 
+// NewWormholeRaft returns a new wormhole raft object, which holds e.g.,
+// TCP transport information and the underlying Raft structure.
 func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir string) *WormholeRaft {
 	rAddr := lAddr + ":" + strconv.Itoa(rPort)
 	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", lAddr, rPort))))
@@ -74,6 +78,8 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 	}
 }
 
+// BootstrapRaft initializes a Raft cluster and bootstrap it with the list of
+// given peers.
 func (wr *WormholeRaft) BootstrapRaft(peeraddrs []string) error {
 	bootstrapConfig := raft.Configuration{
 		Servers: []raft.Server{
@@ -101,6 +107,7 @@ func (wr *WormholeRaft) BootstrapRaft(peeraddrs []string) error {
 	return wr.rf.BootstrapCluster(bootstrapConfig).Error()
 }
 
+// VerifyRaft checks for status of the current raft node, and print it out.
 func (wr *WormholeRaft) VerifyRaft() error {
 	if wr.IsLeader() {
 		fmt.Println("Node is leader")
@@ -121,6 +128,8 @@ func (wr *WormholeRaft) VerifyRaft() error {
 	return nil
 }
 
+// IsLeader returns true if the current Raft node is a valid leader.
+// Otherwise it returns false.
 func (wr *WormholeRaft) IsLeader() bool {
 	if wr.rf.Leader() == "" {
 		return false
@@ -130,6 +139,8 @@ func (wr *WormholeRaft) IsLeader() bool {
 	return false
 }
 
+// AddVoter is a simple wrapper around Raft.AddVoter(), which adds the
+// given server to the cluster as a staging server, assigning a vote.
 func (wr *WormholeRaft) AddVoter(changedPeer string) error {
 	rf := wr.rf
 	indexFuture := rf.AddVoter(raft.ServerID(changedPeer), raft.ServerAddress(changedPeer), 0, 0)
@@ -139,6 +150,8 @@ func (wr *WormholeRaft) AddVoter(changedPeer string) error {
 	return nil
 }
 
+// RemoveServer is a simple wrapper around Raft.RemoveServer(), which removes
+// the given server from the cluster.
 func (wr *WormholeRaft) RemoveServer(changedPeer string) error {
 	rf := wr.rf
 	indexFuture := rf.RemoveServer(raft.ServerID(changedPeer), 0, 0)
