@@ -22,10 +22,13 @@ We also pass `--kyma-server 0.0.0.0:8080` so the wormhole connector listens to e
 $ sudo rkt \
     --insecure-options=image \
     run \
+    --set-env=HOME=/tmp \
     --set-env=WORMHOLE_BIND_INTERFACE=eth0 \
     --set-env=GODEBUG=http2debug=1 \
     --volume key,kind=host,source=$PWD/server.key \
     --volume cert,kind=host,source=$PWD/server.crt \
+    --volume config,kind=host,source=$HOME/.config/wormhole-connector \
+    --mount volume=config,target=$HOME/.config/wormhole-connector \
     aci/wormhole-connector-linux-amd64.aci \
     -- \
     --kyma-server 0.0.0.0:8080
@@ -35,23 +38,26 @@ Now we'll start the rest of the servers pointing to the IP of the first member, 
 
 ```
 $ rkt list | grep running
-0f3359dc	wormhole-connector	kinvolk.io/wormhole-connector	running	5 seconds ago	4 seconds ago	default:ip4=172.16.28.77
+0f3359dc	wormhole-connector	kinvolk.io/wormhole-connector	running	5 seconds ago	4 seconds ago	default:ip4=172.16.28.2
 ```
 
-It's `172.16.28.77`, so we can now start the rest:
+It's `172.16.28.2`, so we can now start the rest:
 
 ```
 $ sudo rkt \
     --insecure-options=image \
     run \
+    --set-env=HOME=/tmp \
     --set-env=WORMHOLE_BIND_INTERFACE=eth0 \
     --set-env=GODEBUG=http2debug=1 \
     --volume key,kind=host,source=$PWD/server.key \
     --volume cert,kind=host,source=$PWD/server.crt \
+    --volume config,kind=host,source=$HOME/.config/wormhole-connector \
+    --mount volume=config,target=$HOME/.config/wormhole-connector \
     aci/wormhole-connector-linux-amd64.aci \
     -- \
     --kyma-server 0.0.0.0:8080 \
-    --serf-member-addrs 172.16.28.77:1111
+    --serf-member-addrs 172.16.28.2:1111
 ```
 
 Now that we have the wormhole connector cluster running we can test it, for example, with the [test http2 client](https://github.com/kinvolk/test-http2/tree/master/client).
@@ -61,7 +67,7 @@ Now that we have the wormhole connector cluster running we can test it, for exam
 Let's connect to the leader:
 
 ```
-$ GODEBUG=http2debug=1 ./client -goroutines 200  -server_addr https://172.16.28.77:8080
+$ GODEBUG=http2debug=1 ./client -goroutines 200  -server_addr https://172.16.28.2:8080
 ```
 
 This should work and print lots of logs in the client and in the leader container, they should show one connection and multiple streams, for example:
@@ -86,15 +92,15 @@ First we have to find out a follower IP
 
 ```
 $ rkt list | grep running
-0f3359dc	wormhole-connector	kinvolk.io/wormhole-connector	running	7 minutes ago	7 minutes ago	default:ip4=172.16.28.77
-5293dad1	wormhole-connector	kinvolk.io/wormhole-connector	running	5 minutes ago	5 minutes ago	default:ip4=172.16.28.78
-d9ffd255	wormhole-connector	kinvolk.io/wormhole-connector	running	5 minutes ago	5 minutes ago	default:ip4=172.16.28.79
+0f3359dc	wormhole-connector	kinvolk.io/wormhole-connector	running	7 minutes ago	7 minutes ago	default:ip4=172.16.28.2
+5293dad1	wormhole-connector	kinvolk.io/wormhole-connector	running	5 minutes ago	5 minutes ago	default:ip4=172.16.28.3
+d9ffd255	wormhole-connector	kinvolk.io/wormhole-connector	running	5 minutes ago	5 minutes ago	default:ip4=172.16.28.4
 ```
 
-Let's use `172.16.28.79`:
+Let's use `172.16.28.4`:
 
 ```
-$ GODEBUG=http2debug=1 ./client -goroutines 200  -server_addr https://172.16.28.79:8080
+$ GODEBUG=http2debug=1 ./client -goroutines 200  -server_addr https://172.16.28.4:8080
 ```
 
 You should see the connection logs both in the follower container and in the leader container.
@@ -106,7 +112,19 @@ When killing the leader, a new leader should be elected and things should work f
 
 ```
 $ rkt list | grep running | head -n1
-0f3359dc	wormhole-connector	kinvolk.io/wormhole-connector	running	13 minutes ago	13 minutes ago	default:ip4=172.16.28.77
+0f3359dc	wormhole-connector	kinvolk.io/wormhole-connector	running	13 minutes ago	13 minutes ago	default:ip4=172.16.28.2
 $ sudo rkt stop 0f3359dc
-$ GODEBUG=http2debug=1 ./client -goroutines 200  -server_addr https://172.16.28.79:8080
+$ GODEBUG=http2debug=1 ./client -goroutines 200  -server_addr https://172.16.28.4:8080
 ```
+
+## Cleaning up rkt containers and CNI configurations
+
+Sometimes you would want to reset the test environment to start testing it again from scratch.
+Then you might want to clean up CNI config files as well as existing rkt containers.
+
+```
+$ sudo rm -f /var/lib/cni/networks/default/*
+$ sudo rkt gc --grace-period=0
+```
+
+After that, a new rkt instance will have a fresh IP address starting from the first IP `172.16.28.2`.
