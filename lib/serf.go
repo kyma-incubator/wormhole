@@ -24,18 +24,23 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
+// SerfDB holds necessary infos for accessing to Serf's BoltDB.
+// BoltDB is a pointer for accessing directly to the underlying database.
+// SerfKeyPeers holds a key string to retrieve each entry for serf peers.
+// SerfBucketName holds a bucket name used at the very first step of DB access.
 type SerfDB struct {
 	BoltDB         *bolt.DB
 	SerfKeyPeers   string
 	SerfBucketName string
 }
 
+// SerfPeer holds a name and an IP address of each Serf peer.
 type SerfPeer struct {
 	Address  string `json:"address,omitempty"`
 	PeerName string `json:"nodename,omitempty"`
 }
 
-func (db *SerfDB) GetPeer(key string) SerfPeer {
+func (db *SerfDB) getPeer(key string) SerfPeer {
 	bdb := db.BoltDB
 	var resPeer SerfPeer
 
@@ -52,7 +57,7 @@ func (db *SerfDB) GetPeer(key string) SerfPeer {
 	return resPeer
 }
 
-func (db *SerfDB) SetPeer(key string, newPeer SerfPeer) {
+func (db *SerfDB) setPeer(key string, newPeer SerfPeer) {
 	bdb := db.BoltDB
 
 	if err := bdb.Update(func(tx *bolt.Tx) error {
@@ -68,7 +73,7 @@ func (db *SerfDB) SetPeer(key string, newPeer SerfPeer) {
 	}
 }
 
-func (db *SerfDB) DeletePeer(key string, newPeer SerfPeer) {
+func (db *SerfDB) deletePeer(key string, newPeer SerfPeer) {
 	bdb := db.BoltDB
 
 	if err := bdb.Update(func(tx *bolt.Tx) error {
@@ -79,6 +84,8 @@ func (db *SerfDB) DeletePeer(key string, newPeer SerfPeer) {
 	}
 }
 
+// GetNewSerf returns the default Serf object, which includes for example,
+// memberlist configs (like bind address, bind port), node name, event channel.
 func GetNewSerf(serfAddr string, serfPort int, serfEvents chan serf.Event) (*serf.Serf, error) {
 	memberlistConfig := memberlist.DefaultLANConfig()
 	memberlistConfig.BindAddr = serfAddr
@@ -99,6 +106,10 @@ func GetNewSerf(serfAddr string, serfPort int, serfEvents chan serf.Event) (*ser
 	return s, nil
 }
 
+// IsMemberEventFailed returns true if the given Serf member event is
+// one of the following event types: leave, failed, or reap. It will be
+// typically used for synchronizing status of a remote peer that has gone
+// out of the Serf peers.
 func IsMemberEventFailed(event serf.MemberEvent) bool {
 	switch event.EventType() {
 	case serf.EventMemberLeave:
