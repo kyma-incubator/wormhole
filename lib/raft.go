@@ -136,28 +136,28 @@ func (snap *eventsSnapshot) Persist(sink raft.SnapshotSink) error {
 func (snap *eventsSnapshot) Release() {
 }
 
+// GetNewRaft returns the default Raft object, which includes for example,
 // a local ID, FSM(Finite State Machine), logstore and snapshotstore, and
 // a TCP transport.
-
-func GetNewRaft(dataDir, raftAddr string, raftPort int, fsm raft.FSM) (*raft.Raft, error) {
+func GetNewRaft(logWriter *os.File, dataDir, raftAddr string, raftPort int, fsm raft.FSM) (*raft.Raft, error) {
 	raftDBPath := filepath.Join(dataDir, "raft.db")
 	raftDB, err := boltdb.NewBoltStore(raftDBPath)
 	if err != nil {
 		return nil, err
 	}
 
-	snapshotStore, err := raft.NewFileSnapshotStore(dataDir, 1, os.Stdout)
+	snapshotStore, err := raft.NewFileSnapshotStore(dataDir, 1, logWriter)
 	if err != nil {
 		return nil, err
 	}
 
-	trans, err := raft.NewTCPTransport(raftAddr, nil, 3, defaultTransportTimeout, os.Stdout)
+	trans, err := raft.NewTCPTransport(raftAddr, nil, 3, defaultTransportTimeout, logWriter)
 	if err != nil {
 		return nil, err
 	}
 
 	c := raft.DefaultConfig()
-	c.LogOutput = os.Stdout
+	c.LogOutput = logWriter
 	c.LocalID = raft.ServerID(raftAddr)
 
 	r, err := raft.NewRaft(c, fsm, raftDB, raftDB, snapshotStore, trans)

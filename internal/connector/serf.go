@@ -40,6 +40,7 @@ var (
 type WormholeSerf struct {
 	wc *WormholeConnector
 
+	logWriter  *os.File
 	serfDB     *lib.SerfDB
 	serfEvents chan serf.Event
 	serfPeers  []lib.SerfPeer
@@ -65,14 +66,21 @@ func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) *
 		return nil
 	}
 
+	var err error
+	logFile := filepath.Join(serfDataDir, "serf.log")
+	ws.logWriter, err = os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+	if err != nil {
+		log.Printf("unable to open file %s: %v", logFile, err)
+		return nil
+	}
+
 	if err := ws.InitSerfDB(filepath.Join(serfDataDir, defaultSerfDbFile)); err != nil {
 		log.Printf("unable to initialize serf db: %v", err)
 		return nil
 	}
 
-	var err error
 	ws.serfEvents = make(chan serf.Event, defaultSerfChannels)
-	ws.sf, err = lib.GetNewSerf(ws.wc.localAddr, ws.serfPort, ws.serfEvents)
+	ws.sf, err = lib.GetNewSerf(ws.logWriter, serfDataDir, ws.wc.localAddr, ws.serfPort, ws.serfEvents)
 	if err != nil {
 		log.Printf("unable to get new serf: %v", err)
 		return nil
@@ -138,6 +146,7 @@ func (ws *WormholeSerf) Shutdown() {
 	if err := ws.serfDB.BoltDB.Close(); err != nil {
 		log.Printf("cannot close DB\n")
 	}
+	ws.logWriter.Close()
 }
 
 // GetPeerAddrs returns a list of IP addresses of Serf peers.
