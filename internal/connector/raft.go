@@ -38,34 +38,37 @@ var (
 type WormholeRaft struct {
 	wc *WormholeConnector
 
-	events *lib.EventsFSM
+	events    *lib.EventsFSM
+	logWriter *os.File
 
 	raftListenPeerAddr string
 	raftListenPeerPort int
 	rf                 *raft.Raft
 }
 
-func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, fsm raft.FSM, id, dataDir string) (*raft.Raft, error) {
+func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, fsm raft.FSM, id, dataDir string) (*raft.Raft, *os.File, error) {
 	raftDataBase := filepath.Join(dataDir, "raft")
 	if err := os.MkdirAll(raftDataBase, os.FileMode(0755)); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	raftDataDir := filepath.Join(raftDataBase, id)
 	if err := os.RemoveAll(raftDataDir + "/"); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := os.MkdirAll(raftDataDir, 0777); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	rf, err := lib.GetNewRaft(raftDataDir, raftListenPeerAddr, raftListenPeerPort, fsm)
+	logFile := filepath.Join(raftDataDir, "raft.log")
+	logWriter, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+	rf, err := lib.GetNewRaft(logWriter, raftDataDir, raftListenPeerAddr, raftListenPeerPort, fsm)
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("unable to open file %s: %v", logFile, err)
 	}
 
-	return rf, nil
+	return rf, logWriter, nil
 }
 
 // NewWormholeRaft returns a new wormhole raft object, which holds e.g.,
@@ -76,7 +79,7 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 
 	events := lib.NewEventsFSM()
 
-	newRf, err := getNewRaft(rAddr, rPort, pWc.WRaft.events, id, dataDir)
+	newRf, logWriter, err := getNewRaft(rAddr, rPort, events, id, dataDir)
 	if err != nil {
 		return nil
 	}
@@ -85,6 +88,7 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 		wc: pWc,
 
 		events:             events,
+		logWriter:          logWriter,
 		raftListenPeerAddr: rAddr,
 		raftListenPeerPort: rPort,
 		rf:                 newRf,
@@ -134,6 +138,12 @@ func (wr *WormholeRaft) BootstrapRaft(peerAddrs []string) error {
 	}
 
 	return wr.rf.BootstrapCluster(bootstrapConfig).Error()
+}
+
+// Shutdown destroys everything for Raft before shutting down the wormhole
+// connector.
+func (wr *WormholeRaft) Shutdown() {
+	wr.logWriter.Close()
 }
 
 // VerifyRaft checks for the status of the current raft node, and prints it out.

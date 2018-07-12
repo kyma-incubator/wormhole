@@ -160,6 +160,7 @@ func (wc *WormholeConnector) ListenAndServeTLS(cert, key string) {
 func (wc *WormholeConnector) Shutdown(ctx context.Context) {
 	wc.server.Shutdown(ctx)
 	wc.WSerf.Shutdown()
+	wc.WRaft.Shutdown()
 }
 
 func getLogger(ctx context.Context) *log.Entry {
