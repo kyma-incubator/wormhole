@@ -25,17 +25,17 @@ import (
 	"github.com/kinvolk/wormhole-connector/lib"
 )
 
-// WormholeRaft holds runtime informations for Raft, such as IP address,
+// WormholeRaft holds runtime information for Raft, such as IP address,
 // TCP port, and a pointer to the underlying Raft structure.
 type WormholeRaft struct {
 	wc *WormholeConnector
 
-	raftAddr string
-	raftPort int
-	rf       *raft.Raft
+	raftListenPeerAddr string
+	raftListenPeerPort int
+	rf                 *raft.Raft
 }
 
-func getNewRaft(raftAddr string, raftPort int, id, dataDir string) (*raft.Raft, error) {
+func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, id, dataDir string) (*raft.Raft, error) {
 	raftDataBase := filepath.Join(dataDir, "raft")
 	if err := os.MkdirAll(raftDataBase, os.FileMode(0755)); err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func getNewRaft(raftAddr string, raftPort int, id, dataDir string) (*raft.Raft, 
 		return nil, err
 	}
 
-	rf, err := lib.GetNewRaft(raftDataDir, raftAddr, raftPort)
+	rf, err := lib.GetNewRaft(raftDataDir, raftListenPeerAddr, raftListenPeerPort)
 	if err != nil {
 		return nil, err
 	}
@@ -72,28 +72,28 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 	return &WormholeRaft{
 		wc: pWc,
 
-		raftAddr: rAddr,
-		raftPort: rPort,
-		rf:       newRf,
+		raftListenPeerAddr: rAddr,
+		raftListenPeerPort: rPort,
+		rf:                 newRf,
 	}
 }
 
-// BootstrapRaft initializes a Raft cluster and bootstrap it with the list of
+// BootstrapRaft initializes a Raft cluster and bootstraps it with the list of
 // given peers.
-func (wr *WormholeRaft) BootstrapRaft(peeraddrs []string) error {
+func (wr *WormholeRaft) BootstrapRaft(peerAddrs []string) error {
 	bootstrapConfig := raft.Configuration{
 		Servers: []raft.Server{
 			{
 				Suffrage: raft.Voter,
-				ID:       raft.ServerID(wr.raftAddr),
-				Address:  raft.ServerAddress(wr.raftAddr),
+				ID:       raft.ServerID(wr.raftListenPeerAddr),
+				Address:  raft.ServerAddress(wr.raftListenPeerAddr),
 			},
 		},
 	}
 
 	// Add known serf peer addresses to bootstrap
-	for _, addr := range peeraddrs {
-		if addr == wr.raftAddr {
+	for _, addr := range peerAddrs {
+		if addr == wr.raftListenPeerAddr {
 			continue
 		}
 
@@ -107,7 +107,7 @@ func (wr *WormholeRaft) BootstrapRaft(peeraddrs []string) error {
 	return wr.rf.BootstrapCluster(bootstrapConfig).Error()
 }
 
-// VerifyRaft checks for status of the current raft node, and print it out.
+// VerifyRaft checks for the status of the current raft node, and prints it out.
 func (wr *WormholeRaft) VerifyRaft() error {
 	if wr.IsLeader() {
 		fmt.Println("Node is leader")
@@ -131,16 +131,11 @@ func (wr *WormholeRaft) VerifyRaft() error {
 // IsLeader returns true if the current Raft node is a valid leader.
 // Otherwise it returns false.
 func (wr *WormholeRaft) IsLeader() bool {
-	if wr.rf.Leader() == "" {
-		return false
-	} else if wr.rf.State() == raft.Leader {
-		return true
-	}
-	return false
+	return wr.rf.State() == raft.Leader
 }
 
 // AddVoter is a simple wrapper around Raft.AddVoter(), which adds the
-// given server to the cluster as a staging server, assigning a vote.
+// given server to the cluster as a staging server, making a voter.
 func (wr *WormholeRaft) AddVoter(changedPeer string) error {
 	rf := wr.rf
 	indexFuture := rf.AddVoter(raft.ServerID(changedPeer), raft.ServerAddress(changedPeer), 0, 0)

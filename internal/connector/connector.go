@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 
@@ -71,7 +70,7 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 	http2.ConfigureServer(&srv, &http2.Server{})
 
 	m := mux.NewRouter()
-	srv.Handler = addLogger(m)
+	srv.Handler = m
 
 	var peerAddrs []string
 	var peers []lib.SerfPeer
@@ -107,15 +106,6 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 	registerHandlers(m, wc)
 
 	return wc
-}
-
-func addLogger(next http.Handler) http.Handler {
-	type loggerKey string
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), loggerKey("logger"), log.WithFields(log.Fields{
-			"request_id": uuid.NewV4()}))
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
 }
 
 func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http.Request) {
@@ -221,26 +211,27 @@ func (wc *WormholeConnector) ProbeSerfRaft(sigchan chan os.Signal) error {
 }
 
 func (wc *WormholeConnector) handleSerfEvents(ev serf.Event) error {
-	wraft := wc.WRaft
+	wRaft := wc.WRaft
 	memberEvent, ok := ev.(serf.MemberEvent)
 	if !ok {
 		return nil
 	}
 
 	for _, member := range memberEvent.Members {
+		// TODO: remove restriction of the raft port having to be serf port + 1
 		changedPeer := member.Addr.String() + ":" + strconv.Itoa(int(member.Port+1))
 		if memberEvent.EventType() == serf.EventMemberJoin {
-			if !wraft.IsLeader() {
+			if !wRaft.IsLeader() {
 				continue
 			}
-			if err := wraft.AddVoter(changedPeer); err != nil {
+			if err := wRaft.AddVoter(changedPeer); err != nil {
 				return err
 			}
 		} else if lib.IsMemberEventFailed(memberEvent) {
-			if !wraft.IsLeader() {
+			if !wRaft.IsLeader() {
 				continue
 			}
-			if err := wraft.RemoveServer(changedPeer); err != nil {
+			if err := wRaft.RemoveServer(changedPeer); err != nil {
 				return err
 			}
 		}

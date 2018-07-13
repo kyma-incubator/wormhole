@@ -31,14 +31,3 @@ $ ./wormhole-connector
 ```
 
 Then its REST API will be available via https://localhost:8080/.
-
-## how to test the REST API
-
-Open another terminal, test each method for the REST API.
-
-```
-$ curl -v -X POST --insecure --http2 https://localhost:8080/v1/serf/peers/set/val1
-$ curl -v -X GET --insecure --http2 https://localhost:8080/v1/serf/peers/get/val1
-$ curl -v -X GET --insecure --http2 https://localhost:8080/v1/serf/peers/get
-$ curl -v -X DELETE --insecure --http2 https://localhost:8080/v1/serf/peers/delete/val1
-```

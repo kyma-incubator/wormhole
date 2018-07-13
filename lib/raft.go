@@ -24,6 +24,10 @@ import (
 	boltdb "github.com/hashicorp/raft-boltdb"
 )
 
+var (
+	defaultTransportTimeout = 10 * time.Second
+)
+
 type fsm struct {
 }
 
@@ -40,8 +44,8 @@ func (f *fsm) Restore(io.ReadCloser) error {
 }
 
 // GetNewRaft returns the default Raft object, which includes for example,
-// a local ID, FSM(Finite State Machine), boltdb stores for logstore and
-// snapshotstore, and a TCP transport.
+// a local ID, FSM(Finite State Machine), logstore and snapshotstore, and
+// a TCP transport.
 func GetNewRaft(dataDir, raftAddr string, raftPort int) (*raft.Raft, error) {
 	raftDBPath := filepath.Join(dataDir, "raft.db")
 	raftDB, err := boltdb.NewBoltStore(raftDBPath)
@@ -54,7 +58,7 @@ func GetNewRaft(dataDir, raftAddr string, raftPort int) (*raft.Raft, error) {
 		return nil, err
 	}
 
-	trans, err := raft.NewTCPTransport(raftAddr, nil, 3, 10*time.Second, os.Stdout)
+	trans, err := raft.NewTCPTransport(raftAddr, nil, 3, defaultTransportTimeout, os.Stdout)
 	if err != nil {
 		return nil, err
 	}

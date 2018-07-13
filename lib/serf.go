@@ -24,17 +24,17 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
-// SerfDB holds necessary infos for accessing to Serf's BoltDB.
-// BoltDB is a pointer for accessing directly to the underlying database.
-// SerfKeyPeers holds a key string to retrieve each entry for serf peers.
-// SerfBucketName holds a bucket name used at the very first step of DB access.
+// SerfDB holds necessary information for accessing to Serf's BoltDB.
+// BoltDB is a pointer for directly accessing the underlying database.
+// SerfKeyPeers is the key to retrieve the Serf peers from the DB.
+// SerfBucketName is the BoltDB bucket name for Serf data.
 type SerfDB struct {
 	BoltDB         *bolt.DB
 	SerfKeyPeers   string
 	SerfBucketName string
 }
 
-// SerfPeer holds a name and an IP address of each Serf peer.
+// SerfPeer holds the name and IP address of a Serf peer.
 type SerfPeer struct {
 	Address  string `json:"address,omitempty"`
 	PeerName string `json:"nodename,omitempty"`
