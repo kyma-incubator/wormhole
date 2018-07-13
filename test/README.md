@@ -123,7 +123,6 @@ Sometimes you would want to reset the test environment to start testing it again
 Then you might want to clean up CNI config files as well as existing rkt containers.
 
 ```
-$ sudo rm -f /var/lib/cni/networks/default/*
 $ sudo rkt gc --grace-period=0
 ```
 

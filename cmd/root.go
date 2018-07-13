@@ -41,8 +41,6 @@ var (
 
 	defaultDataDir = fmt.Sprintf("%s/.config/wormhole-connector", os.Getenv("HOME"))
 
-	dataDir string
-
 	flagDataDir         string
 	flagKymaServer      string
 	flagTimeout         time.Duration

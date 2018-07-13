@@ -35,7 +35,7 @@ var (
 	defaultSerfChannels = 16
 )
 
-// WormholeSerf holds runtime informations for Serf, such as database,
+// WormholeSerf holds runtime information for Serf, such as database,
 // events, peers, and TCP transport information.
 type WormholeSerf struct {
 	wc *WormholeConnector
@@ -136,7 +136,7 @@ func (ws *WormholeSerf) SetupSerf() error {
 // connector.
 func (ws *WormholeSerf) Shutdown() {
 	if err := ws.serfDB.BoltDB.Close(); err != nil {
-		fmt.Printf("cannot close DB\n")
+		log.Printf("cannot close DB\n")
 	}
 }
 
