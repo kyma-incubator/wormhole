@@ -25,10 +25,10 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/hashicorp/serf/serf"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 
-	"github.com/hashicorp/serf/serf"
 	"github.com/kinvolk/wormhole-connector/lib"
 )
 

@@ -25,8 +25,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-	"github.com/kinvolk/wormhole-connector/lib"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/kinvolk/wormhole-connector/lib"
 )
 
 var (
