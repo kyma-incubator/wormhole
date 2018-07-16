@@ -16,13 +16,21 @@ package connector
 
 import (
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/hashicorp/raft"
 	"github.com/kinvolk/wormhole-connector/lib"
+	log "github.com/sirupsen/logrus"
+)
+
+var (
+	defaultEventTimeout = 10 * time.Second
 )
 
 // WormholeRaft holds runtime information for Raft, such as IP address,
@@ -30,32 +38,37 @@ import (
 type WormholeRaft struct {
 	wc *WormholeConnector
 
+	events    *lib.EventsFSM
+	logWriter *os.File
+
 	raftListenPeerAddr string
 	raftListenPeerPort int
 	rf                 *raft.Raft
 }
 
-func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, id, dataDir string) (*raft.Raft, error) {
+func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, fsm raft.FSM, id, dataDir string) (*raft.Raft, *os.File, error) {
 	raftDataBase := filepath.Join(dataDir, "raft")
 	if err := os.MkdirAll(raftDataBase, os.FileMode(0755)); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	raftDataDir := filepath.Join(raftDataBase, id)
 	if err := os.RemoveAll(raftDataDir + "/"); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := os.MkdirAll(raftDataDir, 0777); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	rf, err := lib.GetNewRaft(raftDataDir, raftListenPeerAddr, raftListenPeerPort)
+	logFile := filepath.Join(raftDataDir, "raft.log")
+	logWriter, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+	rf, err := lib.GetNewRaft(logWriter, raftDataDir, raftListenPeerAddr, raftListenPeerPort, fsm)
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("unable to open file %s: %v", logFile, err)
 	}
 
-	return rf, nil
+	return rf, logWriter, nil
 }
 
 // NewWormholeRaft returns a new wormhole raft object, which holds e.g.,
@@ -64,7 +77,9 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 	rAddr := lAddr + ":" + strconv.Itoa(rPort)
 	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", lAddr, rPort))))
 
-	newRf, err := getNewRaft(rAddr, rPort, id, dataDir)
+	events := lib.NewEventsFSM()
+
+	newRf, logWriter, err := getNewRaft(rAddr, rPort, events, id, dataDir)
 	if err != nil {
 		return nil
 	}
@@ -72,9 +87,27 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 	return &WormholeRaft{
 		wc: pWc,
 
+		events:             events,
+		logWriter:          logWriter,
 		raftListenPeerAddr: rAddr,
 		raftListenPeerPort: rPort,
 		rf:                 newRf,
+	}
+}
+
+func (wr *WormholeRaft) handleEvents(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		event := wr.events.TopEvent()
+		w.Write([]byte(event))
+	case "POST":
+		event := r.FormValue("event")
+		wr.EnqueueEvent(event)
+	case "DELETE":
+		wr.DiscardTopEvent()
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
 	}
 }
 
@@ -105,6 +138,12 @@ func (wr *WormholeRaft) BootstrapRaft(peerAddrs []string) error {
 	}
 
 	return wr.rf.BootstrapCluster(bootstrapConfig).Error()
+}
+
+// Shutdown destroys everything for Raft before shutting down the wormhole
+// connector.
+func (wr *WormholeRaft) Shutdown() {
+	wr.logWriter.Close()
 }
 
 // VerifyRaft checks for the status of the current raft node, and prints it out.
@@ -154,4 +193,52 @@ func (wr *WormholeRaft) RemoveServer(changedPeer string) error {
 		return fmt.Errorf("error removing server: %s", err)
 	}
 	return nil
+}
+
+func (wr *WormholeRaft) apply(a *lib.Action, timeout time.Duration) error {
+	data, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+
+	f := wr.rf.Apply(data, timeout)
+	return f.Error()
+}
+
+func (wr *WormholeRaft) EnqueueEvent(ev string) error {
+	if wr == nil {
+		wr.events.EnqueueEvent(ev)
+		return nil
+	}
+
+	if !wr.IsLeader() {
+		log.Infof("is not leader, skip")
+		return nil
+	}
+
+	var a = lib.Action{
+		Cmd:   lib.EnqueueCmd,
+		Event: ev,
+	}
+
+	return wr.apply(&a, defaultEventTimeout)
+}
+
+func (wr *WormholeRaft) DiscardTopEvent() error {
+	if wr == nil {
+		wr.events.DiscardTopEvent()
+		return nil
+	}
+
+	if !wr.IsLeader() {
+		log.Infof("is not leader, skip")
+		return nil
+	}
+
+	var a = lib.Action{
+		Cmd:   lib.DiscardCmd,
+		Event: "",
+	}
+
+	return wr.apply(&a, defaultEventTimeout)
 }

@@ -111,7 +111,8 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http.Request) {
 	wr := wc.WRaft
 	if wr.IsLeader() {
-		// This node is a leader, so there's nothing to do.
+		// This node is a leader, handle the real request
+		wr.handleEvents(w, r)
 		return
 	}
 
@@ -159,6 +160,7 @@ func (wc *WormholeConnector) ListenAndServeTLS(cert, key string) {
 func (wc *WormholeConnector) Shutdown(ctx context.Context) {
 	wc.server.Shutdown(ctx)
 	wc.WSerf.Shutdown()
+	wc.WRaft.Shutdown()
 }
 
 func getLogger(ctx context.Context) *log.Entry {

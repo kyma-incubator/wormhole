@@ -86,17 +86,17 @@ func (db *SerfDB) deletePeer(key string, newPeer SerfPeer) {
 
 // GetNewSerf returns the default Serf object, which includes for example,
 // memberlist configs (like bind address, bind port), node name, event channel.
-func GetNewSerf(serfAddr string, serfPort int, serfEvents chan serf.Event) (*serf.Serf, error) {
+func GetNewSerf(logWriter *os.File, dataDir, serfAddr string, serfPort int, serfEvents chan serf.Event) (*serf.Serf, error) {
 	memberlistConfig := memberlist.DefaultLANConfig()
 	memberlistConfig.BindAddr = serfAddr
 	memberlistConfig.BindPort = serfPort
-	memberlistConfig.LogOutput = os.Stdout
+	memberlistConfig.LogOutput = logWriter
 
 	serfConfig := serf.DefaultConfig()
 	serfConfig.NodeName = fmt.Sprintf("%s:%d", serfAddr, serfPort)
 	serfConfig.EventCh = serfEvents
 	serfConfig.MemberlistConfig = memberlistConfig
-	serfConfig.LogOutput = os.Stdout
+	serfConfig.LogOutput = logWriter
 
 	s, err := serf.Create(serfConfig)
 	if err != nil {
