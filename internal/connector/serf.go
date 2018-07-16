@@ -17,14 +17,14 @@ package connector
 import (
 	"crypto/md5"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
 
 	bolt "github.com/coreos/bbolt"
-
 	"github.com/hashicorp/serf/serf"
+	log "github.com/sirupsen/logrus"
+
 	"github.com/kinvolk/wormhole-connector/lib"
 )
 

@@ -17,7 +17,6 @@ package lib
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/hashicorp/raft"
 	boltdb "github.com/hashicorp/raft-boltdb"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
