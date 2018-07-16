@@ -25,8 +25,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-	"github.com/kinvolk/wormhole-connector/lib"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/kinvolk/wormhole-connector/lib"
 )
 
 var (
@@ -212,7 +213,7 @@ func (wr *WormholeRaft) EnqueueEvent(ev string) error {
 	}
 
 	if !wr.IsLeader() {
-		log.Infof("is not leader, skip")
+		log.Info("is not leader, skip")
 		return nil
 	}
 
@@ -231,7 +232,7 @@ func (wr *WormholeRaft) DiscardTopEvent() error {
 	}
 
 	if !wr.IsLeader() {
-		log.Infof("is not leader, skip")
+		log.Info("is not leader, skip")
 		return nil
 	}
 

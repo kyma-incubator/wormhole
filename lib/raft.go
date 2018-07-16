@@ -17,7 +17,6 @@ package lib
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/hashicorp/raft"
 	boltdb "github.com/hashicorp/raft-boltdb"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -79,7 +79,7 @@ func (fsm *EventsFSM) HandleAction(a *Action) {
 func (f *EventsFSM) Apply(l *raft.Log) interface{} {
 	var a Action
 	if err := json.Unmarshal(l.Data, &a); err != nil {
-		log.Printf("error decoding raft log: %v", err)
+		log.Errorf("error decoding raft log: %v", err)
 		return err
 	}
 
