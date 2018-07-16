@@ -213,7 +213,7 @@ func (wr *WormholeRaft) EnqueueEvent(ev string) error {
 	}
 
 	if !wr.IsLeader() {
-		log.Infof("is not leader, skip")
+		log.Info("is not leader, skip")
 		return nil
 	}
 
@@ -232,7 +232,7 @@ func (wr *WormholeRaft) DiscardTopEvent() error {
 	}
 
 	if !wr.IsLeader() {
-		log.Infof("is not leader, skip")
+		log.Info("is not leader, skip")
 		return nil
 	}
 
