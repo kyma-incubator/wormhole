@@ -113,7 +113,10 @@ func runWormholeConnector(cmd *cobra.Command, args []string) {
 	term := make(chan os.Signal, 2)
 	signal.Notify(term, os.Interrupt)
 
-	w := connector.NewWormholeConnector(config)
+	w, err := connector.NewWormholeConnector(config)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	w.ListenAndServeTLS("server.crt", "server.key")
 
