@@ -1,4 +1,4 @@
-# Test a wormhole connector cluster
+# Test a wormhole connector cluster using rkt
 
 This example requires [rkt](https://github.com/rkt/rkt/releases) and [build](https://github.com/containers/build/releases).
 
@@ -127,3 +127,52 @@ $ sudo rkt gc --grace-period=0
 ```
 
 After that, a new rkt instance will have a fresh IP address starting from the first IP `172.16.28.2`.
+
+# Test a wormhole connector cluster using docker/moby
+
+This example requires [docker/moby](https://github.com/moby/moby/releases).
+
+## Get the wormhole connector cluster running
+
+First, build an image:
+
+```
+$ make docker
+```
+
+This will generate a docker image with a name `kinvolk/wormhole-connector`.
+
+Now you can start the first server of your cluster.
+
+We'll start it with `GODEBUG=http2debug=1` to check that there's one HTTP/2 connection using several streams.
+
+We also pass `--kyma-server=0.0.0.0:8080` so the wormhole connector listens to external connections:
+
+```
+docker run --rm --tty \
+    --env=WORMHOLE_BIND_INTERFACE=eth0 \
+    --env=GODEBUG=http2debug=1 \
+    --volume=$PWD/server.crt:/tmp/server.crt \
+    --volume=$PWD/server.key:/tmp/server.key \
+    --volume=$HOME/.config/wormhole-connector:/tmp/.config/wormhole-connector \
+    --entrypoint=/bin/sh \
+    kinvolk/wormhole-connector \
+    -c "/entrypoint.sh --kyma-server=0.0.0.0:8080"
+```
+
+Now we'll start the rest of the servers pointing to the IP of the first member, whose IP address is printed via stdout of the first server launched above. Let's assume that the IP is `172.17.0.2`.
+
+```
+docker run --rm --tty \
+    --env=WORMHOLE_BIND_INTERFACE=eth0 \
+    --env=GODEBUG=http2debug=1 \
+    --volume=$PWD/server.crt:/tmp/server.crt \
+    --volume=$PWD/server.key:/tmp/server.key \
+    --volume=$HOME/.config/wormhole-connector:/tmp/.config/wormhole-connector \
+    --entrypoint=/bin/sh \
+    kinvolk/wormhole-connector \
+    -c "/entrypoint.sh --kyma-server=0.0.0.0:8080 --serf-member-addrs=172.17.0.2:1111"
+```
+
+Now that we have the wormhole connector cluster running we can test it, for example, with the [test http2 client](https://github.com/kinvolk/test-http2/tree/master/client).
+You can follow the rest of the [testing steps described above](https://github.com/kinvolk/wormhole-connector/tree/master/test#simple-test).
