@@ -21,6 +21,9 @@ aci: linux
 	cd aci && \
 		sudo ./build.sh
 
+docker: linux
+	docker build -t kinvolk/wc .
+
 update-vendor: | dep
 	dep ensure
 dep:
