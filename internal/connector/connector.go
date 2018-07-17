@@ -62,7 +62,7 @@ type WormholeConnectorConfig struct {
 // WormholeSerf & WormholeRaft structures. This function implicitly initializes
 // both WormholeSerf and WormholeRaft, and registers necessary HTTP handlers
 // as well.
-func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
+func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, error) {
 	var srv http.Server
 
 	srv.Addr = config.KymaServer
@@ -92,8 +92,17 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 		dataDir:   config.DataDir,
 	}
 
-	wc.WRaft = NewWormholeRaft(wc, config.LocalAddr, config.RaftPort, config.DataDir)
-	wc.WSerf = NewWormholeSerf(wc, peers, config.SerfPort)
+	newRaft, err := NewWormholeRaft(wc, config.LocalAddr, config.RaftPort, config.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	wc.WRaft = newRaft
+
+	newSerf, err := NewWormholeSerf(wc, peers, config.SerfPort)
+	if err != nil {
+		return nil, err
+	}
+	wc.WSerf = newSerf
 
 	// Split kymaServer in a format of host:port into parts, and store the 2nd
 	// part into rpcPort. If it's not possible, fall back to 8080.
@@ -105,7 +114,7 @@ func NewWormholeConnector(config WormholeConnectorConfig) *WormholeConnector {
 
 	registerHandlers(m, wc)
 
-	return wc
+	return wc, nil
 }
 
 func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http.Request) {

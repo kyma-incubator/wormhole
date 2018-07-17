@@ -50,7 +50,7 @@ type WormholeSerf struct {
 
 // NewWormholeSerf returns a new wormhole serf object, which holds e.g.,
 // database, events, peers, and TCP transport information.
-func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) *WormholeSerf {
+func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) (*WormholeSerf, error) {
 	ws := &WormholeSerf{
 		wc: pWc,
 
@@ -62,31 +62,27 @@ func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) *
 
 	serfDataDir := filepath.Join(ws.wc.dataDir, "serf", id)
 	if err := os.MkdirAll(serfDataDir, os.FileMode(0755)); err != nil {
-		log.Errorf("unable to create directory %s: %v", serfDataDir, err)
-		return nil
+		return nil, fmt.Errorf("unable to create directory %s: %v", serfDataDir, err)
 	}
 
 	var err error
 	logFile := filepath.Join(serfDataDir, "serf.log")
 	ws.logWriter, err = os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
 	if err != nil {
-		log.Errorf("unable to open file %s: %v", logFile, err)
-		return nil
+		return nil, fmt.Errorf("unable to open file %s: %v", logFile, err)
 	}
 
 	if err := ws.InitSerfDB(filepath.Join(serfDataDir, defaultSerfDbFile)); err != nil {
-		log.Errorf("unable to initialize serf db: %v", err)
-		return nil
+		return nil, fmt.Errorf("unable to initialize serf db: %v", err)
 	}
 
 	ws.serfEvents = make(chan serf.Event, defaultSerfChannels)
 	ws.sf, err = lib.GetNewSerf(ws.logWriter, serfDataDir, ws.wc.localAddr, ws.serfPort, ws.serfEvents)
 	if err != nil {
-		log.Errorf("unable to get new serf: %v", err)
-		return nil
+		return nil, fmt.Errorf("unable to get new serf: %v", err)
 	}
 
-	return ws
+	return ws, nil
 }
 
 // InitSerfDB opens the database, initializes the database with the default
