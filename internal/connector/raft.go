@@ -74,7 +74,7 @@ func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, fsm raft.FSM,
 
 // NewWormholeRaft returns a new wormhole raft object, which holds e.g.,
 // TCP transport information and the underlying Raft structure.
-func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir string) *WormholeRaft {
+func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir string) (*WormholeRaft, error) {
 	rAddr := lAddr + ":" + strconv.Itoa(rPort)
 	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", lAddr, rPort))))
 
@@ -82,7 +82,7 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 
 	newRf, logWriter, err := getNewRaft(rAddr, rPort, events, id, dataDir)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	return &WormholeRaft{
@@ -93,7 +93,7 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 		raftListenPeerAddr: rAddr,
 		raftListenPeerPort: rPort,
 		rf:                 newRf,
-	}
+	}, nil
 }
 
 func (wr *WormholeRaft) handleEvents(w http.ResponseWriter, r *http.Request) {
