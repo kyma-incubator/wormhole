@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wormhole-connector
+  labels:
+    app: wormhole-connector
+spec:
+  ports:
+  - port: 8080
+    name: wc
+  clusterIP: None
+  selector:
+    app: wormhole-connector
+---
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: wc
+spec:
+  selector:
+    matchLabels:
+      app: wormhole-connector
+  serviceName: "wormhole-connector"
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: wormhole-connector
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: wormhole-connector
+        # NOTE: needs to be a local image, as there's no public image available yet
+        image: 10.111.62.70/kinvolk/wormhole-connector:latest
+        ports:
+        - containerPort: 8080
+          name: wc
+        volumeMounts:
+        - name: wc-workdir-volume
+          mountPath: /tmp/
+        - name: wc-config-volume
+          mountPath: /tmp/.config/wormhole-connector
+      volumes:
+      - name: wc-workdir-volume
+        # It's assumed that we test it with minikube, where /hosthome/$USER is already
+        # mounted from outside of minikube VM.
+        hostPath:
+          path: /hosthome/user/go/src/github.com/kinvolk/wormhole-connector
+          type: Directory
+      - name: wc-config-volume
+        hostPath:
+          path: /hosthome/user/.config/wormhole-connector
+          type: Directory
+  volumeClaimTemplates:
+  - metadata:
+      name: wc
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
