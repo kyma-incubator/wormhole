@@ -64,9 +64,13 @@ func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, fsm raft.FSM,
 
 	logFile := filepath.Join(raftDataDir, "raft.log")
 	logWriter, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
-	rf, err := lib.GetNewRaft(logWriter, raftDataDir, raftListenPeerAddr, raftListenPeerPort, fsm)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to open file %s: %v", logFile, err)
+	}
+
+	rf, err := lib.GetNewRaft(logWriter, raftDataDir, raftListenPeerAddr, raftListenPeerPort, fsm)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to get new raft: %v", err)
 	}
 
 	return rf, logWriter, nil
