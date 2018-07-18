@@ -70,6 +70,37 @@ type WormholeConnectorConfig struct {
 	SerfPort        int
 	Timeout         time.Duration
 	DataDir         string
+	Standalone      bool
+}
+
+func (wc *WormholeConnector) setupSerfRaft(config WormholeConnectorConfig) error {
+	var peerAddrs []string
+	var peers []lib.SerfPeer
+
+	if config.SerfMemberAddrs != "" {
+		peerAddrs = strings.Split(config.SerfMemberAddrs, ",")
+	}
+
+	for _, addr := range peerAddrs {
+		peers = append(peers, lib.SerfPeer{
+			PeerName: addr, // it should be actually hostname
+			Address:  addr,
+		})
+	}
+
+	newRaft, err := NewWormholeRaft(wc, config.LocalAddr, config.RaftPort, config.DataDir)
+	if err != nil {
+		return err
+	}
+	wc.WRaft = newRaft
+
+	newSerf, err := NewWormholeSerf(wc, peers, config.SerfPort)
+	if err != nil {
+		return err
+	}
+	wc.WSerf = newSerf
+
+	return nil
 }
 
 // splitLocalAddr takes a localAddr[:port] address and returns its address and
@@ -121,20 +152,6 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 
 	m := mux.NewRouter()
 
-	var peerAddrs []string
-	var peers []lib.SerfPeer
-
-	if config.SerfMemberAddrs != "" {
-		peerAddrs = strings.Split(config.SerfMemberAddrs, ",")
-	}
-
-	for _, addr := range peerAddrs {
-		peers = append(peers, lib.SerfPeer{
-			PeerName: addr, // it should be actually hostname
-			Address:  addr,
-		})
-	}
-
 	wc := &WormholeConnector{
 		localAddr:      config.LocalAddr,
 		server:         &srv,
@@ -149,18 +166,6 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 	wc.bufferPool = sync.Pool{New: makeBuffer}
 
 	wc.rpcPort = bindPort
-
-	newRaft, err := NewWormholeRaft(wc, bindAddr, config.RaftPort, config.DataDir)
-	if err != nil {
-		return nil, err
-	}
-	wc.WRaft = newRaft
-
-	newSerf, err := NewWormholeSerf(wc, peers, config.SerfPort)
-	if err != nil {
-		return nil, err
-	}
-	wc.WSerf = newSerf
 
 	registerHandlers(m, wc)
 
@@ -398,8 +403,12 @@ func (wc *WormholeConnector) ListenAndServeTLS(cert, key string) {
 // destroys its Serf object.
 func (wc *WormholeConnector) Shutdown(ctx context.Context) {
 	wc.server.Shutdown(ctx)
-	wc.WSerf.Shutdown()
-	wc.WRaft.Shutdown()
+	if wc.WSerf != nil {
+		wc.WSerf.Shutdown()
+	}
+	if wc.WRaft != nil {
+		wc.WRaft.Shutdown()
+	}
 }
 
 func getLogger(ctx context.Context) *log.Entry {

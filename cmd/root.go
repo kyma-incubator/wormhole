@@ -48,6 +48,7 @@ var (
 	flagSerfPort        int
 	flagRaftPort        int
 	flagLocalAddr       string
+	flagStandalone      bool
 )
 
 // Execute adds all child commands to the root command sets flags appropriately.
@@ -71,6 +72,7 @@ func init() {
 	RootCmd.PersistentFlags().IntVar(&flagRaftPort, "raft-port", 1112, "port number on which Raft listens (default is 1112)")
 	RootCmd.PersistentFlags().StringVar(&flagLocalAddr, "local-addr", "127.0.0.1:8080", "address to bind")
 	RootCmd.PersistentFlags().StringVar(&flagDataDir, "data-dir", defaultDataDir, "data directory to store state")
+	RootCmd.PersistentFlags().BoolVar(&flagStandalone, "standalone", false, "whether to run alone without getting involved in serf/raft (default false)")
 
 	viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	viper.BindPFlag("kymaServer", RootCmd.PersistentFlags().Lookup("kyma-server"))
@@ -80,6 +82,7 @@ func init() {
 	viper.BindPFlag("raft.port", RootCmd.PersistentFlags().Lookup("raft-port"))
 	viper.BindPFlag("localAddr", RootCmd.PersistentFlags().Lookup("local-addr"))
 	viper.BindPFlag("dataDir", RootCmd.PersistentFlags().Lookup("data-dir"))
+	viper.BindPFlag("standalone", RootCmd.PersistentFlags().Lookup("standalone"))
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -108,6 +111,7 @@ func runWormholeConnector(cmd *cobra.Command, args []string) {
 		SerfPort:        viper.GetInt("serf.port"),
 		Timeout:         viper.GetDuration("timeout"),
 		DataDir:         viper.GetString("dataDir"),
+		Standalone:      viper.GetBool("standalone"),
 	}
 
 	term := make(chan os.Signal, 2)
@@ -120,12 +124,17 @@ func runWormholeConnector(cmd *cobra.Command, args []string) {
 
 	w.ListenAndServeTLS("server.crt", "server.key")
 
-	if err := w.SetupSerfRaft(); err != nil {
-		log.Fatal(err)
-	}
+	if config.Standalone {
+		log.Debug("Getting into a standalone mode.")
+		<-term
+	} else {
+		if err := w.SetupSerfRaft(); err != nil {
+			log.Fatal(err)
+		}
 
-	if err := w.ProbeSerfRaft(term); err != nil {
-		log.Fatal(err)
+		if err := w.ProbeSerfRaft(term); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	log.Info("Shutting down server...")
