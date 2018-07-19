@@ -22,7 +22,11 @@ aci: linux
 		sudo ./build.sh
 
 docker: linux
-	docker build -t kinvolk/wc .
+	# NOTE: If you need to push the docker image to a private registry,
+	# building like this might not be enough. In that case, run:
+	#
+	#   docker build -t $$IPADDR_REGISTRY/kinvolk/wormhole-connector .
+	docker build -t kinvolk/wormhole-connector .
 
 update-vendor: | dep
 	dep ensure
