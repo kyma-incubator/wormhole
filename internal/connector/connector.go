@@ -312,6 +312,13 @@ func (wc *WormholeConnector) dualStream(w1 io.Writer, r1 io.Reader, w2 io.Writer
 		buf := wc.bufferPool.Get().([]byte)
 		buf = buf[0:cap(buf)]
 		_, _err := flushingIoCopy(w, r, buf)
+
+		// if the client side is closed or the client cancels, that doesn't
+		// mean there's an error
+		if http2isClientDisconnect(_err) {
+			_err = nil
+		}
+
 		errChan <- _err
 	}
 
