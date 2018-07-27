@@ -255,6 +255,15 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 // net.TCPConn), it will do a simple io.CopyBuffer(). Reasoning:
 // http2ResponseWriter will not flush on its own, so we have to do it manually.
 func flushingIoCopy(dst io.Writer, src io.Reader, buf []byte) (written int64, err error) {
+	dstCloser, ok := dst.(io.Closer)
+	if ok {
+		defer dstCloser.Close()
+	}
+	srcCloser, ok := src.(io.Closer)
+	if ok {
+		defer srcCloser.Close()
+	}
+
 	flusher, ok := dst.(http.Flusher)
 	if !ok {
 		return io.CopyBuffer(dst, src, buf)
