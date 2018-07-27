@@ -104,6 +104,7 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 	tr := &http.Transport{
 		// TODO disable this or make it configurable
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		IdleConnTimeout: config.Timeout,
 	}
 	client = http.Client{Transport: tr}
 
