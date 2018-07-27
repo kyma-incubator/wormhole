@@ -71,6 +71,16 @@ type WormholeConnectorConfig struct {
 	DataDir         string
 }
 
+// splitLocalAddr takes a localAddr[:port] address and returns its address and
+// port components, if no port is specified, it is assumed to be defaultPort
+func splitLocalAddr(localAddr, defaultPort string) (string, string, error) {
+	if strings.Contains(localAddr, ":") {
+		return net.SplitHostPort(localAddr)
+	}
+
+	return localAddr, defaultPort, nil
+}
+
 func (wc *WormholeConnector) wormholeHandler(m *mux.Router) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodConnect {
@@ -80,16 +90,6 @@ func (wc *WormholeConnector) wormholeHandler(m *mux.Router) http.Handler {
 
 		m.ServeHTTP(w, r)
 	})
-}
-
-// splitLocalAddr takes a localAddr[:port] address and returns its address and
-// port components, if no port is specified, it is assumed to be "8080"
-func splitLocalAddr(localAddr string) (string, string, error) {
-	if strings.Contains(localAddr, ":") {
-		return net.SplitHostPort(localAddr)
-	}
-
-	return localAddr, "8080", nil
 }
 
 // NewWormholeConnector returns a new wormhole connector, which holds e.g.,
@@ -110,7 +110,7 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 
 	http2.ConfigureTransport(tr)
 
-	bindAddr, bindPort, err := splitLocalAddr(config.LocalAddr)
+	bindAddr, bindPort, err := splitLocalAddr(config.LocalAddr, "8080")
 	if err != nil {
 		return nil, fmt.Errorf("error splitting local-addr: %v", err)
 	}
@@ -249,51 +249,6 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 		http.Error(w, fmt.Sprintf("failed to copy proxy streams: %v", err), http.StatusBadGateway)
 		return
 	}
-}
-
-// flushingIoCopy is analogous to buffering io.Copy(), but also attempts to
-// flush on each iteration. If dst does not implement http.Flusher (e.g.
-// net.TCPConn), it will do a simple io.CopyBuffer(). Reasoning:
-// http2ResponseWriter will not flush on its own, so we have to do it manually.
-func flushingIoCopy(dst io.Writer, src io.Reader, buf []byte) (written int64, err error) {
-	dstCloser, ok := dst.(io.Closer)
-	if ok {
-		defer dstCloser.Close()
-	}
-	srcCloser, ok := src.(io.Closer)
-	if ok {
-		defer srcCloser.Close()
-	}
-
-	flusher, ok := dst.(http.Flusher)
-	if !ok {
-		return io.CopyBuffer(dst, src, buf)
-	}
-	for {
-		nr, er := src.Read(buf)
-		if nr > 0 {
-			nw, ew := dst.Write(buf[0:nr])
-			flusher.Flush()
-			if nw > 0 {
-				written += int64(nw)
-			}
-			if ew != nil {
-				err = ew
-				break
-			}
-			if nr != nw {
-				err = io.ErrShortWrite
-				break
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-	return
 }
 
 // dualStream copies data r1->w1 and r2->w2, flushes as needed, and returns
