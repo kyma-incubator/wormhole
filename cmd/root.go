@@ -48,6 +48,8 @@ var (
 	flagSerfPort        int
 	flagRaftPort        int
 	flagLocalAddr       string
+	flagTrustCA         string
+	flagInsecure        bool
 )
 
 // Execute adds all child commands to the root command sets flags appropriately.
@@ -72,6 +74,9 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&flagLocalAddr, "local-addr", "127.0.0.1:8080", "address to bind")
 	RootCmd.PersistentFlags().StringVar(&flagDataDir, "data-dir", defaultDataDir, "data directory to store state")
 
+	RootCmd.PersistentFlags().StringVar(&flagTrustCA, "trust-ca", "", "Custom CA for the kyma-server address")
+	RootCmd.PersistentFlags().BoolVar(&flagInsecure, "insecure", false, "Trust any CA for the kyma-server")
+
 	viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	viper.BindPFlag("kymaServer", RootCmd.PersistentFlags().Lookup("kyma-server"))
 	viper.BindPFlag("timeout", RootCmd.PersistentFlags().Lookup("timeout"))
@@ -80,6 +85,8 @@ func init() {
 	viper.BindPFlag("raft.port", RootCmd.PersistentFlags().Lookup("raft-port"))
 	viper.BindPFlag("localAddr", RootCmd.PersistentFlags().Lookup("local-addr"))
 	viper.BindPFlag("dataDir", RootCmd.PersistentFlags().Lookup("data-dir"))
+	viper.BindPFlag("trustCA", RootCmd.PersistentFlags().Lookup("trust-ca"))
+	viper.BindPFlag("insecure", RootCmd.PersistentFlags().Lookup("insecure"))
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -108,6 +115,8 @@ func runWormholeConnector(cmd *cobra.Command, args []string) {
 		SerfPort:        viper.GetInt("serf.port"),
 		Timeout:         viper.GetDuration("timeout"),
 		DataDir:         viper.GetString("dataDir"),
+		TrustCA:         viper.GetString("trustCA"),
+		Insecure:        viper.GetBool("insecure"),
 	}
 
 	term := make(chan os.Signal, 2)

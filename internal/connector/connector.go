@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -70,6 +71,8 @@ type WormholeConnectorConfig struct {
 	SerfPort        int
 	Timeout         time.Duration
 	DataDir         string
+	TrustCA         string
+	Insecure        bool
 }
 
 // splitLocalAddr takes a localAddr[:port] address and returns its address and
@@ -93,6 +96,34 @@ func (wc *WormholeConnector) wormholeHandler(m *mux.Router) http.Handler {
 	})
 }
 
+func generateTLSConfig(trustCA string, insecure bool) (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: insecure,
+	}
+
+	if insecure || trustCA == "" {
+		return tlsConfig, nil
+	}
+
+	rootCAs, _ := x509.SystemCertPool()
+	if rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+
+	certs, err := ioutil.ReadFile(trustCA)
+	if err != nil {
+		return nil, fmt.Errorf("failed to append %q to RootCAs: %v", trustCA, err)
+	}
+
+	if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
+		log.Infof("no certs appended, using system certs only")
+	}
+
+	tlsConfig.RootCAs = rootCAs
+
+	return tlsConfig, nil
+}
+
 // NewWormholeConnector returns a new wormhole connector, which holds e.g.,
 // local IP address, http server, location of data directory, and pointers to
 // WormholeSerf & WormholeRaft structures. This function implicitly initializes
@@ -102,10 +133,14 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 	var srv http.Server
 	var client http.Client
 
+	tlsConfig, err := generateTLSConfig(config.TrustCA, config.Insecure)
+	if err != nil {
+		return nil, err
+	}
+
 	tr := &http.Transport{
-		// TODO disable this or make it configurable
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		IdleConnTimeout: config.Timeout,
+		TLSClientConfig: tlsConfig,
 	}
 	client = http.Client{Transport: tr}
 
