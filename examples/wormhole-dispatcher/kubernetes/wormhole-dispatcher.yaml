@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wormhole-dispatcher
+  labels:
+    app: wormhole-dispatcher
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: wormhole-dispatcher
+  template:
+    metadata:
+      labels:
+        app: wormhole-dispatcher
+    spec:
+      containers:
+      - name: wormhole-dispatcher
+        imagePullPolicy: IfNotPresent
+        image: kinvolk/wormhole-dispatcher
+        args: ["--https_addr=0.0.0.0:9090"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: wormhole-dispatcher
+  name: wormhole-dispatcher
+spec:
+  type: NodePort
+  ports:
+  - port: 9090
+    protocol: TCP
+  selector:
+    app: wormhole-dispatcher
