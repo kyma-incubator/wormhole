@@ -9,11 +9,15 @@
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 
-package connector
+package http2error
 
 import "strings"
 
-func http2isClientDisconnect(err error) bool {
+// IsClientDisconnect returns whether an error is a client side disconnect.
+//
+// If the client side is closed or the client cancels, that doesn't
+// mean there's an error
+func IsClientDisconnect(err error) bool {
 	if err == nil {
 		return false
 	}

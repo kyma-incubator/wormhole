@@ -36,6 +36,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 
+	"github.com/kinvolk/wormhole-connector/internal/http2error"
+	"github.com/kinvolk/wormhole-connector/internal/streamio"
 	"github.com/kinvolk/wormhole-connector/lib"
 )
 
@@ -331,40 +333,12 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 	wFlusher.Flush()
 
-	if err := wc.dualStream(tunnelWriter, r.Body, w, tunnelRes.Body); err != nil {
+	err = streamio.DualStream(tunnelWriter, r.Body, w, tunnelRes.Body, wc.bufferPool)
+	if err != nil && !http2error.IsClientDisconnect(err) {
 		log.Errorf("failed to copy proxy streams: %v", err)
 		http.Error(w, fmt.Sprintf("failed to copy proxy streams: %v", err), http.StatusBadGateway)
 		return
 	}
-}
-
-// dualStream copies data r1->w1 and r2->w2, flushes as needed, and returns
-// when both streams are done.
-func (wc *WormholeConnector) dualStream(w1 io.Writer, r1 io.Reader, w2 io.Writer, r2 io.Reader) error {
-	errChan := make(chan error)
-
-	stream := func(w io.Writer, r io.Reader) {
-		buf := wc.bufferPool.Get().([]byte)
-		buf = buf[0:cap(buf)]
-		_, _err := flushingIoCopy(w, r, buf)
-
-		// if the client side is closed or the client cancels, that doesn't
-		// mean there's an error
-		if http2isClientDisconnect(_err) {
-			_err = nil
-		}
-
-		errChan <- _err
-	}
-
-	go stream(w1, r1)
-	go stream(w2, r2)
-	err1 := <-errChan
-	err2 := <-errChan
-	if err1 != nil {
-		return err1
-	}
-	return err2
 }
 
 // serveHijack hijacks the connection from ResponseWriter, writes the response
@@ -410,7 +384,12 @@ func (wc *WormholeConnector) serveHijack(w http.ResponseWriter, writ io.Writer, 
 		return fmt.Errorf("failed to send response to client: %v", err)
 	}
 
-	return wc.dualStream(writ, clientConn, clientConn, read)
+	err = streamio.DualStream(writ, clientConn, clientConn, read, wc.bufferPool)
+	if err != nil && !http2error.IsClientDisconnect(err) {
+		return err
+	}
+
+	return nil
 }
 
 func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
