@@ -50,6 +50,8 @@ var (
 	flagLocalAddr       string
 	flagTrustCA         string
 	flagInsecure        bool
+	flagCertFile        string
+	flagKeyFile         string
 )
 
 // Execute adds all child commands to the root command sets flags appropriately.
@@ -76,6 +78,8 @@ func init() {
 
 	RootCmd.PersistentFlags().StringVar(&flagTrustCA, "trust-ca", "", "Custom CA for the kyma-server address")
 	RootCmd.PersistentFlags().BoolVar(&flagInsecure, "insecure", false, "Trust any CA for the kyma-server")
+	RootCmd.PersistentFlags().StringVar(&flagCertFile, "cert-file", "connector.pem", "Path to the server cert file")
+	RootCmd.PersistentFlags().StringVar(&flagKeyFile, "key-file", "connector-key.pem", "Path to the server key file")
 
 	viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	viper.BindPFlag("kymaServer", RootCmd.PersistentFlags().Lookup("kyma-server"))
@@ -87,6 +91,8 @@ func init() {
 	viper.BindPFlag("dataDir", RootCmd.PersistentFlags().Lookup("data-dir"))
 	viper.BindPFlag("trustCA", RootCmd.PersistentFlags().Lookup("trust-ca"))
 	viper.BindPFlag("insecure", RootCmd.PersistentFlags().Lookup("insecure"))
+	viper.BindPFlag("certFile", RootCmd.PersistentFlags().Lookup("cert-file"))
+	viper.BindPFlag("keyFile", RootCmd.PersistentFlags().Lookup("key-file"))
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -127,7 +133,7 @@ func runWormholeConnector(cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	w.ListenAndServeTLS("server.crt", "server.key")
+	w.ListenAndServeTLS(flagCertFile, flagKeyFile)
 
 	if err := w.SetupSerfRaft(); err != nil {
 		log.Fatal(err)
