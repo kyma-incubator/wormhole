@@ -384,7 +384,7 @@ func (wc *WormholeConnector) serveHijack(w http.ResponseWriter, writ io.Writer, 
 		return fmt.Errorf("failed to send response to client: %v", err)
 	}
 
-	err = streamio.DualStream(writ, clientConn, clientConn, read, wc.bufferPool)
+	err = streamio.DualStream(writ, clientConn, clientConn, read, &wc.bufferPool)
 	if err != nil && !http2error.IsClientDisconnect(err) {
 		return err
 	}

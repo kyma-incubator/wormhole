@@ -24,8 +24,8 @@ import (
 // and returns when both streams are done, closing the Readers/Writers if they
 // implement the io.Closer interface.
 //
-// bufferPool should be a sync.Pool of byte arrays.
-func DualStream(w1 io.Writer, r1 io.Reader, w2 io.Writer, r2 io.Reader, bufferPool sync.Pool) error {
+// bufferPool should be a *sync.Pool of byte arrays.
+func DualStream(w1 io.Writer, r1 io.Reader, w2 io.Writer, r2 io.Reader, bufferPool *sync.Pool) error {
 	errChan := make(chan error)
 
 	stream := func(w io.Writer, r io.Reader) {

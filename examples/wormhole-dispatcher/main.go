@@ -81,7 +81,7 @@ func dispatcherHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = streamio.DualStream(dest_conn, r.Body, w, dest_conn, bufferPool)
+	err = streamio.DualStream(dest_conn, r.Body, w, dest_conn, &bufferPool)
 	if err != nil && !http2error.IsClientDisconnect(err) {
 		errorMsg := fmt.Sprintf("error streaming: %v", err)
 		errorResponse.ContentLength = int64(len(errorMsg))
