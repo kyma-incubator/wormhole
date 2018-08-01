@@ -68,7 +68,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.config/wormhole-connector/connector.yaml)")
-	RootCmd.PersistentFlags().StringVar(&flagKymaServer, "kyma-server", "localhost:9090", "Kyma server address")
+	RootCmd.PersistentFlags().StringVar(&flagKymaServer, "kyma-server", "https://localhost:9090", "Kyma server address")
 	RootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 5*time.Minute, "Timeout for the HTTP/2 connection")
 	RootCmd.PersistentFlags().StringVar(&flagSerfMemberAddrs, "serf-member-addrs", "", "a set of IP:Port pairs of each Serf member")
 	RootCmd.PersistentFlags().IntVar(&flagSerfPort, "serf-port", 1111, "port number on which Serf listens (default is 1111)")
