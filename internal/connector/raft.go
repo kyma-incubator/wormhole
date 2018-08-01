@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/raft"
@@ -39,6 +40,7 @@ var (
 type WormholeRaft struct {
 	wc *WormholeConnector
 
+	lastState raft.RaftState
 	events    *lib.EventsFSM
 	logWriter *os.File
 
@@ -73,6 +75,8 @@ func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, fsm raft.FSM,
 		return nil, nil, fmt.Errorf("unable to get new raft: %v", err)
 	}
 
+	log.Infof("raft: starting member %s", id)
+
 	return rf, logWriter, nil
 }
 
@@ -97,6 +101,7 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 		raftListenPeerAddr: rAddr,
 		raftListenPeerPort: rPort,
 		rf:                 newRf,
+		lastState:          10, // undefined
 	}, nil
 }
 
@@ -142,6 +147,8 @@ func (wr *WormholeRaft) BootstrapRaft(peerAddrs []string) error {
 		})
 	}
 
+	wr.logState()
+
 	return wr.rf.BootstrapCluster(bootstrapConfig).Error()
 }
 
@@ -151,23 +158,29 @@ func (wr *WormholeRaft) Shutdown() {
 	wr.logWriter.Close()
 }
 
+func (wr *WormholeRaft) logState() {
+	currentState := wr.rf.State()
+	if wr.lastState != currentState {
+		wr.lastState = currentState
+		log.Infof("raft: node is now a %s", currentState)
+	}
+}
+
 // VerifyRaft checks for the status of the current raft node, and prints it out.
 func (wr *WormholeRaft) VerifyRaft() error {
-	if wr.IsLeader() {
-		fmt.Println("Node is leader")
-	} else {
-		fmt.Println("Node is a follower")
-	}
-
+	wr.logState()
 	cfuture := wr.rf.GetConfiguration()
 	if err := cfuture.Error(); err != nil {
 		return fmt.Errorf("error getting config: %s", err)
 	}
 
 	configuration := cfuture.Configuration()
+	var serverAddresses []string
 	for _, server := range configuration.Servers {
-		fmt.Println(server.Address)
+		serverAddresses = append(serverAddresses, string(server.Address))
 	}
+
+	log.Debugf("Raft servers known: %s", strings.Join(serverAddresses, ","))
 
 	return nil
 }
@@ -217,7 +230,7 @@ func (wr *WormholeRaft) EnqueueEvent(ev string) error {
 	}
 
 	if !wr.IsLeader() {
-		log.Info("is not leader, skip")
+		log.Info("raft: is not leader, skip")
 		return nil
 	}
 
@@ -236,7 +249,7 @@ func (wr *WormholeRaft) DiscardTopEvent() error {
 	}
 
 	if !wr.IsLeader() {
-		log.Info("is not leader, skip")
+		log.Info("raft: is not leader, skip")
 		return nil
 	}
 

@@ -33,6 +33,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/serf/serf"
+	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 
@@ -180,7 +181,7 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 		kymaServerAddr: config.KymaServer,
 	}
 
-	srv.Handler = wc.wormholeHandler(m)
+	srv.Handler = addLogger(wc.wormholeHandler(m))
 
 	makeBuffer := func() interface{} { return make([]byte, 0, bufferSize) }
 	wc.bufferPool = sync.Pool{New: makeBuffer}
@@ -191,17 +192,27 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("raft: listening for raft peers on %s:%d", bindAddr, config.RaftPort)
 	wc.WRaft = newRaft
 
 	newSerf, err := NewWormholeSerf(wc, peers, config.SerfPort)
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("serf: listening for serf peers on %s:%d", bindAddr, config.SerfPort)
 	wc.WSerf = newSerf
 
 	registerHandlers(m, wc)
 
 	return wc, nil
+}
+
+func addLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), "logger", log.WithFields(log.Fields{
+			"request_id": uuid.NewV4()}))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http.Request) {
@@ -299,15 +310,20 @@ func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) 
 }
 
 func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := getLogger(ctx)
+
 	if r.Method != http.MethodConnect {
-		log.Errorf("method %q not implemented", r.Method)
+		logger.Errorf("method %q not implemented", r.Method)
 		http.Error(w, fmt.Sprintf("method %q not implemented", r.Method), http.StatusNotImplemented)
 		return
 	}
 
+	logger.Infof("proxying request to %s", r.Host)
+
 	tunnelWriter, tunnelRes, err := wc.createTunnelConnection(r.Host, true)
 	if err != nil {
-		log.Errorf("failed to create tunnel to Kyma server: %v", err)
+		logger.Errorf("failed to create tunnel to Kyma server: %v", err)
 		http.Error(w, fmt.Sprintf("failed to create tunnel to Kyma server: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -316,7 +332,7 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 	// HTTP/1: we hijack the connection and send it through the HTTP/2 tunnel
 	if r.ProtoMajor == 1 {
 		if err := wc.serveHijack(w, tunnelWriter, tunnelRes.Body); err != nil {
-			log.Errorf("failed to hijack HTTP/1 connection: %v", err)
+			logger.Errorf("failed to hijack HTTP/1 connection: %v", err)
 		}
 		return
 	}
@@ -325,7 +341,7 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 
 	wFlusher, ok := w.(http.Flusher)
 	if !ok {
-		log.Error("ResponseWriter doesn't implement Flusher()")
+		logger.Error("ResponseWriter doesn't implement Flusher()")
 		http.Error(w, "ResponseWriter doesn't implement Flusher()", http.StatusInternalServerError)
 		return
 	}
@@ -333,9 +349,9 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 	wFlusher.Flush()
 
-	err = streamio.DualStream(tunnelWriter, r.Body, w, tunnelRes.Body, wc.bufferPool)
+	err = streamio.DualStream(tunnelWriter, r.Body, w, tunnelRes.Body, &wc.bufferPool)
 	if err != nil && !http2error.IsClientDisconnect(err) {
-		log.Errorf("failed to copy proxy streams: %v", err)
+		logger.Errorf("failed to copy proxy streams: %v", err)
 		http.Error(w, fmt.Sprintf("failed to copy proxy streams: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -400,6 +416,7 @@ func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
 // ListenAndServeTLS spawns a goroutine that runs http.ListenAndServeTLS.
 func (wc *WormholeConnector) ListenAndServeTLS(cert, key string) {
 	go func() {
+		log.Infof("connector: listening for client requests on %s", wc.server.Addr)
 		if err := wc.server.ListenAndServeTLS(cert, key); err != nil {
 			if err != http.ErrServerClosed {
 				log.Fatal(err)

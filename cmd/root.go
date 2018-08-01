@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -52,6 +53,8 @@ var (
 	flagInsecure        bool
 	flagCertFile        string
 	flagKeyFile         string
+	flagVerbose         bool
+	flagQuiet           bool
 )
 
 // Execute adds all child commands to the root command sets flags appropriately.
@@ -80,6 +83,8 @@ func init() {
 	RootCmd.PersistentFlags().BoolVar(&flagInsecure, "insecure", false, "Trust any CA for the kyma-server")
 	RootCmd.PersistentFlags().StringVar(&flagCertFile, "cert-file", "connector.pem", "Path to the server cert file")
 	RootCmd.PersistentFlags().StringVar(&flagKeyFile, "key-file", "connector-key.pem", "Path to the server key file")
+	RootCmd.PersistentFlags().BoolVar(&flagVerbose, "verbose", false, "Enable verbose output")
+	RootCmd.PersistentFlags().BoolVar(&flagQuiet, "quiet", false, "Supress output (except errors)")
 
 	viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	viper.BindPFlag("kymaServer", RootCmd.PersistentFlags().Lookup("kyma-server"))
@@ -108,7 +113,21 @@ func initConfig() {
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
+		log.Printf("Using config file: %s", viper.ConfigFileUsed())
+	}
+}
+
+func setLogLevel() {
+	if flagVerbose && flagQuiet {
+		log.Fatal(errors.New("can't set both verbose and quiet flags"))
+	}
+
+	if flagVerbose {
+		log.SetLevel(log.DebugLevel)
+	} else if flagQuiet {
+		log.SetLevel(log.ErrorLevel)
+	} else {
+		log.SetLevel(log.InfoLevel)
 	}
 }
 
@@ -124,6 +143,8 @@ func runWormholeConnector(cmd *cobra.Command, args []string) {
 		TrustCAFile:     viper.GetString("trustCAFile"),
 		Insecure:        viper.GetBool("insecure"),
 	}
+
+	setLogLevel()
 
 	term := make(chan os.Signal, 2)
 	signal.Notify(term, os.Interrupt)

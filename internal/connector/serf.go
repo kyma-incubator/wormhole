@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	bolt "github.com/coreos/bbolt"
@@ -81,6 +82,7 @@ func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) (
 	if err != nil {
 		return nil, fmt.Errorf("unable to get new serf: %v", err)
 	}
+	log.Infof("serf: starting member %s", id)
 
 	return ws, nil
 }
@@ -118,7 +120,7 @@ func (ws *WormholeSerf) InitSerfDB(dbPath string) error {
 // SetupSerf makes every given Serf peer join the Serf cluster.
 func (ws *WormholeSerf) SetupSerf() error {
 	if len(ws.serfPeers) == 0 {
-		log.Infoln("empty serf peers list, nothing to do.")
+		log.Debug("empty serf peers list, nothing to do.")
 		return nil
 	}
 
@@ -132,7 +134,7 @@ func (ws *WormholeSerf) SetupSerf() error {
 		return fmt.Errorf("unable to join an existing serf cluster: %v", err)
 	}
 
-	log.Infof("successfully joined %d peers", numJoined)
+	log.Infof("serf: successfully joined %d peers: %s", numJoined, strings.Join(addrs, ","))
 	return nil
 }
 
@@ -140,7 +142,7 @@ func (ws *WormholeSerf) SetupSerf() error {
 // connector.
 func (ws *WormholeSerf) Shutdown() {
 	if err := ws.serfDB.BoltDB.Close(); err != nil {
-		log.Warnln("cannot close serf DB")
+		log.Warnln("serf: cannot close serf DB")
 	}
 	ws.logWriter.Close()
 }
