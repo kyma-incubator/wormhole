@@ -71,7 +71,7 @@ type WormholeConnectorConfig struct {
 	SerfPort        int
 	Timeout         time.Duration
 	DataDir         string
-	TrustCA         string
+	TrustCAFile     string
 	Insecure        bool
 }
 
@@ -96,12 +96,12 @@ func (wc *WormholeConnector) wormholeHandler(m *mux.Router) http.Handler {
 	})
 }
 
-func generateTLSConfig(trustCA string, insecure bool) (*tls.Config, error) {
+func generateTLSConfig(trustCAFile string, insecure bool) (*tls.Config, error) {
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: insecure,
 	}
 
-	if insecure || trustCA == "" {
+	if insecure || trustCAFile == "" {
 		return tlsConfig, nil
 	}
 
@@ -110,9 +110,9 @@ func generateTLSConfig(trustCA string, insecure bool) (*tls.Config, error) {
 		rootCAs = x509.NewCertPool()
 	}
 
-	certs, err := ioutil.ReadFile(trustCA)
+	certs, err := ioutil.ReadFile(trustCAFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to append %q to RootCAs: %v", trustCA, err)
+		return nil, fmt.Errorf("failed to append %q to RootCAs: %v", trustCAFile, err)
 	}
 
 	if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
@@ -133,7 +133,7 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 	var srv http.Server
 	var client http.Client
 
-	tlsConfig, err := generateTLSConfig(config.TrustCA, config.Insecure)
+	tlsConfig, err := generateTLSConfig(config.TrustCAFile, config.Insecure)
 	if err != nil {
 		return nil, err
 	}
