@@ -42,29 +42,34 @@ type WormholeSerf struct {
 	wc *WormholeConnector
 
 	logWriter  *os.File
+	logger     *log.Entry
 	serfDB     *lib.SerfDB
 	serfEvents chan serf.Event
 	serfPeers  []lib.SerfPeer
+	serfAddr   string
 	serfPort   int
 	sf         *serf.Serf
 }
 
 // NewWormholeSerf returns a new wormhole serf object, which holds e.g.,
 // database, events, peers, and TCP transport information.
-func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) (*WormholeSerf, error) {
+func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sAddr string, sPort int) (*WormholeSerf, error) {
 	ws := &WormholeSerf{
 		wc: pWc,
 
 		serfPeers: sPeers,
 		serfPort:  sPort,
+		serfAddr:  sAddr,
 	}
 
-	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", ws.wc.localAddr, ws.serfPort))))
+	id := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s:%d", ws.serfAddr, ws.serfPort))))
 
 	serfDataDir := filepath.Join(ws.wc.dataDir, "serf", id)
 	if err := os.MkdirAll(serfDataDir, os.FileMode(0755)); err != nil {
 		return nil, fmt.Errorf("unable to create directory %s: %v", serfDataDir, err)
 	}
+
+	ws.logger = log.WithFields(log.Fields{"component": "serf"})
 
 	var err error
 	logFile := filepath.Join(serfDataDir, "serf.log")
@@ -78,11 +83,13 @@ func NewWormholeSerf(pWc *WormholeConnector, sPeers []lib.SerfPeer, sPort int) (
 	}
 
 	ws.serfEvents = make(chan serf.Event, defaultSerfChannels)
-	ws.sf, err = lib.GetNewSerf(ws.logWriter, serfDataDir, ws.wc.localAddr, ws.serfPort, ws.serfEvents)
+	ws.sf, err = lib.GetNewSerf(ws.logWriter, serfDataDir, ws.serfAddr, ws.serfPort, ws.serfEvents)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get new serf: %v", err)
 	}
-	log.Infof("serf: starting member %s", id)
+	ws.logger.Infof("starting member %s", id)
+
+	ws.logger.Infof("listening for serf peers on %s:%d", ws.serfAddr, ws.serfPort)
 
 	return ws, nil
 }
@@ -120,7 +127,7 @@ func (ws *WormholeSerf) InitSerfDB(dbPath string) error {
 // SetupSerf makes every given Serf peer join the Serf cluster.
 func (ws *WormholeSerf) SetupSerf() error {
 	if len(ws.serfPeers) == 0 {
-		log.Debug("empty serf peers list, nothing to do.")
+		ws.logger.Debug("empty serf peers list, nothing to do.")
 		return nil
 	}
 
@@ -134,7 +141,7 @@ func (ws *WormholeSerf) SetupSerf() error {
 		return fmt.Errorf("unable to join an existing serf cluster: %v", err)
 	}
 
-	log.Infof("serf: successfully joined %d peers: %s", numJoined, strings.Join(addrs, ","))
+	ws.logger.Infof("successfully joined %d peers: %s", numJoined, strings.Join(addrs, ","))
 	return nil
 }
 
@@ -142,7 +149,7 @@ func (ws *WormholeSerf) SetupSerf() error {
 // connector.
 func (ws *WormholeSerf) Shutdown() {
 	if err := ws.serfDB.BoltDB.Close(); err != nil {
-		log.Warnln("serf: cannot close serf DB")
+		ws.logger.Warnln("cannot close serf DB")
 	}
 	ws.logWriter.Close()
 }

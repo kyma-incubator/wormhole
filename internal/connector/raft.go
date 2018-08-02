@@ -43,6 +43,7 @@ type WormholeRaft struct {
 	lastState raft.RaftState
 	events    *lib.EventsFSM
 	logWriter *os.File
+	logger    *log.Entry
 
 	raftListenPeerAddr string
 	raftListenPeerPort int
@@ -75,8 +76,6 @@ func getNewRaft(raftListenPeerAddr string, raftListenPeerPort int, fsm raft.FSM,
 		return nil, nil, fmt.Errorf("unable to get new raft: %v", err)
 	}
 
-	log.Infof("raft: starting member %s", id)
-
 	return rf, logWriter, nil
 }
 
@@ -88,16 +87,22 @@ func NewWormholeRaft(pWc *WormholeConnector, lAddr string, rPort int, dataDir st
 
 	events := lib.NewEventsFSM()
 
+	logger := log.WithFields(log.Fields{"component": "raft"})
+
 	newRf, logWriter, err := getNewRaft(rAddr, rPort, events, id, dataDir)
 	if err != nil {
 		return nil, err
 	}
+
+	logger.Infof("starting member %s", id)
+	logger.Infof("listening for raft peers on %s:%d", lAddr, rPort)
 
 	return &WormholeRaft{
 		wc: pWc,
 
 		events:             events,
 		logWriter:          logWriter,
+		logger:             logger,
 		raftListenPeerAddr: rAddr,
 		raftListenPeerPort: rPort,
 		rf:                 newRf,
@@ -162,7 +167,7 @@ func (wr *WormholeRaft) logState() {
 	currentState := wr.rf.State()
 	if wr.lastState != currentState {
 		wr.lastState = currentState
-		log.Infof("raft: node is now a %s", currentState)
+		wr.logger.Infof("node is now a %s", currentState)
 	}
 }
 
@@ -180,7 +185,7 @@ func (wr *WormholeRaft) VerifyRaft() error {
 		serverAddresses = append(serverAddresses, string(server.Address))
 	}
 
-	log.Debugf("Raft servers known: %s", strings.Join(serverAddresses, ","))
+	wr.logger.Debugf("servers known: %s", strings.Join(serverAddresses, ","))
 
 	return nil
 }
@@ -230,7 +235,7 @@ func (wr *WormholeRaft) EnqueueEvent(ev string) error {
 	}
 
 	if !wr.IsLeader() {
-		log.Info("raft: is not leader, skip")
+		wr.logger.Info("node is not leader, skip")
 		return nil
 	}
 
@@ -249,7 +254,7 @@ func (wr *WormholeRaft) DiscardTopEvent() error {
 	}
 
 	if !wr.IsLeader() {
-		log.Info("raft: is not leader, skip")
+		wr.logger.Info("node is not leader, skip")
 		return nil
 	}
 

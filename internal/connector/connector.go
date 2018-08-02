@@ -60,6 +60,8 @@ type WormholeConnector struct {
 	dataDir        string
 	kymaServerAddr string
 
+	logger *log.Entry
+
 	// for proxy server
 	bufferPool sync.Pool
 }
@@ -181,7 +183,9 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 		kymaServerAddr: config.KymaServer,
 	}
 
-	srv.Handler = addLogger(wc.wormholeHandler(m))
+	wc.logger = log.WithFields(log.Fields{"component": "connector"})
+
+	srv.Handler = wc.addRequestID(wc.wormholeHandler(m))
 
 	makeBuffer := func() interface{} { return make([]byte, 0, bufferSize) }
 	wc.bufferPool = sync.Pool{New: makeBuffer}
@@ -192,14 +196,12 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("raft: listening for raft peers on %s:%d", bindAddr, config.RaftPort)
 	wc.WRaft = newRaft
 
-	newSerf, err := NewWormholeSerf(wc, peers, config.SerfPort)
+	newSerf, err := NewWormholeSerf(wc, peers, bindAddr, config.SerfPort)
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("serf: listening for serf peers on %s:%d", bindAddr, config.SerfPort)
 	wc.WSerf = newSerf
 
 	registerHandlers(m, wc)
@@ -207,10 +209,11 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 	return wc, nil
 }
 
-func addLogger(next http.Handler) http.Handler {
+func (wc *WormholeConnector) addRequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), "logger", log.WithFields(log.Fields{
-			"request_id": uuid.NewV4()}))
+		ctx := context.WithValue(r.Context(), "logger", wc.logger.WithFields(log.Fields{
+			"request_id": uuid.NewV4(),
+		}))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -272,9 +275,20 @@ func (wc *WormholeConnector) createTunnelConnection(host string, https bool) (io
 }
 
 func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	ctxLogger := getLogger(ctx)
+	logger := ctxLogger.WithFields(log.Fields{
+		"handler": "HTTP",
+		"host":    r.Host,
+	})
+
+	logger.Infof("proxying request")
+
 	tunnelWriter, tunnelRes, err := wc.createTunnelConnection(r.Host, false)
 	if err != nil {
-		log.Errorf("failed to create tunnel to Kyma server: %v", err)
+		logger.WithFields(log.Fields{
+			"operation": "create tunnel connection",
+		}).Errorf("%v", err)
 		http.Error(w, fmt.Sprintf("failed to create tunnel to Kyma server: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -283,14 +297,18 @@ func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) 
 	removeHopByHop(r.Header)
 
 	if err := r.Write(tunnelWriter); err != nil {
-		log.Errorf("failed to write request to proxy stream: %v", err)
-		http.Error(w, fmt.Sprintf("failed to write request to proxy stream: %v", err), http.StatusBadGateway)
+		logger.WithFields(log.Fields{
+			"operation": "write request to tunnel",
+		}).Errorf("%v", err)
+		http.Error(w, fmt.Sprintf("failed to write request to tunnel: %v", err), http.StatusBadGateway)
 		return
 	}
 
 	resp, err := http.ReadResponse(bufio.NewReader(tunnelRes.Body), r)
 	if err != nil {
-		log.Errorf("failed to read response from proxy stream: %v", err)
+		logger.WithFields(log.Fields{
+			"operation": "read response from proxy stream",
+		}).Errorf("%v", err)
 		http.Error(w, fmt.Sprintf("failed to read response from proxy stream: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -303,7 +321,9 @@ func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) 
 	buf = buf[0:cap(buf)]
 
 	if _, err := io.CopyBuffer(w, resp.Body, buf); err != nil {
-		log.Errorf("failed to copy response from proxy stream: %v", err)
+		logger.WithFields(log.Fields{
+			"operation": "copy stream response from proxy stream",
+		}).Errorf("%v", err)
 		http.Error(w, fmt.Sprintf("failed to copy response from proxy stream: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -311,7 +331,12 @@ func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) 
 
 func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	logger := getLogger(ctx)
+	ctxLogger := getLogger(ctx)
+
+	logger := ctxLogger.WithFields(log.Fields{
+		"handler": "HTTPS",
+		"host":    r.Host,
+	})
 
 	if r.Method != http.MethodConnect {
 		logger.Errorf("method %q not implemented", r.Method)
@@ -319,11 +344,13 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	logger.Infof("proxying request to %s", r.Host)
+	logger.Infof("proxying request")
 
 	tunnelWriter, tunnelRes, err := wc.createTunnelConnection(r.Host, true)
 	if err != nil {
-		logger.Errorf("failed to create tunnel to Kyma server: %v", err)
+		logger.WithFields(log.Fields{
+			"operation": "create tunnel connection",
+		}).Errorf("%v", err)
 		http.Error(w, fmt.Sprintf("failed to create tunnel to Kyma server: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -332,7 +359,9 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 	// HTTP/1: we hijack the connection and send it through the HTTP/2 tunnel
 	if r.ProtoMajor == 1 {
 		if err := wc.serveHijack(w, tunnelWriter, tunnelRes.Body); err != nil {
-			logger.Errorf("failed to hijack HTTP/1 connection: %v", err)
+			logger.WithFields(log.Fields{
+				"operation": "hijack HTTP/1 connection",
+			}).Errorf("%v", err)
 		}
 		return
 	}
@@ -351,7 +380,9 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 
 	err = streamio.DualStream(tunnelWriter, r.Body, w, tunnelRes.Body, &wc.bufferPool)
 	if err != nil && !http2error.IsClientDisconnect(err) {
-		logger.Errorf("failed to copy proxy streams: %v", err)
+		logger.WithFields(log.Fields{
+			"operation": "copy proxy streams",
+		}).Errorf("%v", err)
 		http.Error(w, fmt.Sprintf("failed to copy proxy streams: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -416,7 +447,7 @@ func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
 // ListenAndServeTLS spawns a goroutine that runs http.ListenAndServeTLS.
 func (wc *WormholeConnector) ListenAndServeTLS(cert, key string) {
 	go func() {
-		log.Infof("connector: listening for client requests on %s", wc.server.Addr)
+		wc.logger.Infof("listening for client requests on %s", wc.server.Addr)
 		if err := wc.server.ListenAndServeTLS(cert, key); err != nil {
 			if err != http.ErrServerClosed {
 				log.Fatal(err)
