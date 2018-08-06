@@ -9,7 +9,7 @@
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 
-package connector
+package header
 
 import (
 	"net/http"
@@ -28,7 +28,7 @@ var hopByHopHeaders = []string{
 	"Transfer-Encoding",
 }
 
-func copyHeader(dst, src http.Header) {
+func Copy(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
 			dst.Add(k, v)
@@ -36,7 +36,7 @@ func copyHeader(dst, src http.Header) {
 	}
 }
 
-func removeHopByHop(header http.Header) {
+func RemoveHopByHop(header http.Header) {
 	connectionHeaders := header.Get("Connection")
 	for _, h := range strings.Split(connectionHeaders, ",") {
 		header.Del(strings.TrimSpace(h))

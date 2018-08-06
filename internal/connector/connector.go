@@ -16,10 +16,8 @@ package connector
 
 import (
 	"bufio"
+	"bytes"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -37,8 +35,12 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 
+	"github.com/kinvolk/wormhole-connector/internal/connection"
+	"github.com/kinvolk/wormhole-connector/internal/header"
 	"github.com/kinvolk/wormhole-connector/internal/http2error"
 	"github.com/kinvolk/wormhole-connector/internal/streamio"
+	"github.com/kinvolk/wormhole-connector/internal/tlsutil"
+	"github.com/kinvolk/wormhole-connector/internal/tunnel"
 	"github.com/kinvolk/wormhole-connector/lib"
 )
 
@@ -101,34 +103,6 @@ func (wc *WormholeConnector) wormholeHandler(m *mux.Router) http.Handler {
 	})
 }
 
-func generateTLSConfig(trustCAFile string, insecure bool) (*tls.Config, error) {
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: insecure,
-	}
-
-	if insecure || trustCAFile == "" {
-		return tlsConfig, nil
-	}
-
-	rootCAs, _ := x509.SystemCertPool()
-	if rootCAs == nil {
-		rootCAs = x509.NewCertPool()
-	}
-
-	certs, err := ioutil.ReadFile(trustCAFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to append %q to RootCAs: %v", trustCAFile, err)
-	}
-
-	if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
-		log.Infof("no certs appended, using system certs only")
-	}
-
-	tlsConfig.RootCAs = rootCAs
-
-	return tlsConfig, nil
-}
-
 // NewWormholeConnector returns a new wormhole connector, which holds e.g.,
 // local IP address, http server, location of data directory, and pointers to
 // WormholeSerf & WormholeRaft structures. This function implicitly initializes
@@ -138,7 +112,7 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 	var srv http.Server
 	var client http.Client
 
-	tlsConfig, err := generateTLSConfig(config.TrustCAFile, config.Insecure)
+	tlsConfig, err := tlsutil.GenerateTLSConfig(config.TrustCAFile, config.Insecure)
 	if err != nil {
 		return nil, err
 	}
@@ -249,31 +223,6 @@ func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http
 	http.Redirect(w, r, leaderURL, http.StatusTemporaryRedirect)
 }
 
-func (wc *WormholeConnector) createTunnelConnection(host string, https bool) (io.Writer, *http.Response, error) {
-	pr, pw := io.Pipe()
-	tunnelReq, err := http.NewRequest(http.MethodConnect, wc.kymaServerAddr, ioutil.NopCloser(pr))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to prepare request: %v", err)
-	}
-
-	// set Host in the tunnel request to the host requested by the client
-	tunnelReq.Host = host
-
-	if !https {
-		// set protocol so the other end of the tunnel knows what port to dial
-		tunnelReq.Header.Set("X-Forwarded-Proto", "http")
-	}
-
-	// establish tunnel, if a tunnel is already established, the same HTTP/2
-	// connection will be used
-	tunnelRes, err := wc.client.Do(tunnelReq)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to do request: %v", err)
-	}
-
-	return pw, tunnelRes, nil
-}
-
 func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ctxLogger := getLogger(ctx)
@@ -284,7 +233,7 @@ func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) 
 
 	logger.Infof("proxying request")
 
-	tunnelWriter, tunnelRes, err := wc.createTunnelConnection(r.Host, false)
+	tunnelWriter, tunnelRes, err := tunnel.Create(wc.client, r.Host, wc.kymaServerAddr, tunnel.RequestHTTP, tunnel.ConnectorEndpoint)
 	if err != nil {
 		logger.WithFields(log.Fields{
 			"operation": "create tunnel connection",
@@ -294,7 +243,7 @@ func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 	defer tunnelRes.Body.Close()
 
-	removeHopByHop(r.Header)
+	header.RemoveHopByHop(r.Header)
 
 	if err := r.Write(tunnelWriter); err != nil {
 		logger.WithFields(log.Fields{
@@ -314,7 +263,7 @@ func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 	defer resp.Body.Close()
 
-	copyHeader(w.Header(), resp.Header)
+	header.Copy(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 
 	buf := wc.bufferPool.Get().([]byte)
@@ -344,99 +293,95 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	logger.Infof("proxying request")
+	if r.Header.Get("X-Wormhole-Dispatcher") == "true" {
+		host := r.Host
+		// if the request doesn't include a port and the protocol is HTTP, use port
+		// 80 as a default
+		if !strings.Contains(r.Host, ":") && r.Header.Get("X-Forwarded-Proto") == "http" {
+			host += ":80"
+		}
 
-	tunnelWriter, tunnelRes, err := wc.createTunnelConnection(r.Host, true)
-	if err != nil {
-		logger.WithFields(log.Fields{
-			"operation": "create tunnel connection",
-		}).Errorf("%v", err)
-		http.Error(w, fmt.Sprintf("failed to create tunnel to Kyma server: %v", err), http.StatusBadGateway)
-		return
-	}
-	defer tunnelRes.Body.Close()
+		logger.Printf("dispatching traffic to %q", host)
 
-	// HTTP/1: we hijack the connection and send it through the HTTP/2 tunnel
-	if r.ProtoMajor == 1 {
-		if err := wc.serveHijack(w, tunnelWriter, tunnelRes.Body); err != nil {
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		dialer := &net.Dialer{
+			Timeout:   20 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}
+
+		errorResponse := &http.Response{
+			StatusCode: http.StatusBadGateway,
+			Proto:      "HTTP/2.0",
+			ProtoMajor: 2,
+			ProtoMinor: 0,
+			Header:     make(http.Header),
+		}
+
+		dest_conn, err := dialer.Dial("tcp", host)
+		if err != nil {
+			errorMsg := fmt.Sprintf("error dialing %q: %v", host, err)
+			errorResponse.Body = ioutil.NopCloser(bytes.NewBufferString(errorMsg))
+			errorResponse.ContentLength = int64(len(errorMsg))
+			errorResponse.Write(w)
+			return
+		}
+
+		err = streamio.DualStream(dest_conn, r.Body, w, dest_conn, &wc.bufferPool)
+		if err != nil && !http2error.IsClientDisconnect(err) {
+			errorMsg := fmt.Sprintf("error streaming: %v", err)
+			errorResponse.ContentLength = int64(len(errorMsg))
+			errorResponse.Body = ioutil.NopCloser(bytes.NewBufferString(errorMsg))
+			errorResponse.Write(w)
+			return
+		}
+	} else {
+		logger.Infof("proxying request")
+
+		tunnelWriter, tunnelRes, err := tunnel.Create(wc.client, r.Host, wc.kymaServerAddr, tunnel.RequestHTTPS, tunnel.ConnectorEndpoint)
+		if err != nil {
 			logger.WithFields(log.Fields{
-				"operation": "hijack HTTP/1 connection",
+				"operation": "create tunnel connection",
 			}).Errorf("%v", err)
+			http.Error(w, fmt.Sprintf("failed to create tunnel to Kyma server: %v", err), http.StatusBadGateway)
+			return
 		}
-		return
-	}
+		defer tunnelRes.Body.Close()
 
-	defer r.Body.Close()
-
-	wFlusher, ok := w.(http.Flusher)
-	if !ok {
-		logger.Error("ResponseWriter doesn't implement Flusher()")
-		http.Error(w, "ResponseWriter doesn't implement Flusher()", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	wFlusher.Flush()
-
-	err = streamio.DualStream(tunnelWriter, r.Body, w, tunnelRes.Body, &wc.bufferPool)
-	if err != nil && !http2error.IsClientDisconnect(err) {
-		logger.WithFields(log.Fields{
-			"operation": "copy proxy streams",
-		}).Errorf("%v", err)
-		http.Error(w, fmt.Sprintf("failed to copy proxy streams: %v", err), http.StatusBadGateway)
-		return
-	}
-}
-
-// serveHijack hijacks the connection from ResponseWriter, writes the response
-// and proxies data between targetConn and hijacked connection.
-func (wc *WormholeConnector) serveHijack(w http.ResponseWriter, writ io.Writer, read io.Reader) error {
-	_, ok := w.(http.CloseNotifier)
-	if !ok {
-		return errors.New("ResponseWriter does not implement CloseNotifier")
-	}
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		return errors.New("ResponseWriter does not implement Hijacker")
-	}
-	clientConn, bufReader, err := hijacker.Hijack()
-	if err != nil {
-		return fmt.Errorf("failed to hijack: %v", err)
-	}
-	defer clientConn.Close()
-
-	// bufReader may contain unprocessed buffered data from the client.
-	if bufReader != nil {
-		if n := bufReader.Reader.Buffered(); n > 0 {
-			rbuf, err := bufReader.Reader.Peek(n)
-			if err != nil {
-				return err
+		// HTTP/1: we hijack the connection and send it through the HTTP/2 tunnel
+		if r.ProtoMajor == 1 {
+			if err := connection.ServeHijack(w, tunnelWriter, tunnelRes.Body, &wc.bufferPool); err != nil {
+				logger.WithFields(log.Fields{
+					"operation": "hijack HTTP/1 connection",
+				}).Errorf("%v", err)
 			}
-			writ.Write(rbuf)
+			return
+		}
+
+		defer r.Body.Close()
+
+		wFlusher, ok := w.(http.Flusher)
+		if !ok {
+			logger.Error("ResponseWriter doesn't implement Flusher()")
+			http.Error(w, "ResponseWriter doesn't implement Flusher()", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		wFlusher.Flush()
+
+		err = streamio.DualStream(tunnelWriter, r.Body, w, tunnelRes.Body, &wc.bufferPool)
+		if err != nil && !http2error.IsClientDisconnect(err) {
+			logger.WithFields(log.Fields{
+				"operation": "copy proxy streams",
+			}).Errorf("%v", err)
+			http.Error(w, fmt.Sprintf("failed to copy proxy streams: %v", err), http.StatusBadGateway)
+			return
 		}
 	}
-
-	// Since we hijacked the connection, we can't write and flush headers via w.
-	// Let's handcraft the response and send it manually.
-	res := &http.Response{StatusCode: http.StatusOK,
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Header:     make(http.Header),
-	}
-	res.Header.Set("Server", "wormhole-connector")
-
-	err = res.Write(clientConn)
-	if err != nil {
-		return fmt.Errorf("failed to send response to client: %v", err)
-	}
-
-	err = streamio.DualStream(writ, clientConn, clientConn, read, &wc.bufferPool)
-	if err != nil && !http2error.IsClientDisconnect(err) {
-		return err
-	}
-
-	return nil
 }
 
 func registerHandlers(mux *mux.Router, wc *WormholeConnector) {

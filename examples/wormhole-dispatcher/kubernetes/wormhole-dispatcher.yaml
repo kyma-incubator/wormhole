@@ -18,7 +18,12 @@ spec:
       - name: wormhole-dispatcher
         imagePullPolicy: IfNotPresent
         image: kinvolk/wormhole-dispatcher
-        args: ["--https_addr=0.0.0.0:9090"]
+        args:
+          - "--local-addr=0.0.0.0:9090"
+          # so we don't have to pass the CA
+          - "--insecure"
+          # 192.167.99.1 is the IP of the host when running on minikube
+          - "--connector-server=https://192.168.99.1:8080"
 ---
 apiVersion: v1
 kind: Service
