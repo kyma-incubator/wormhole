@@ -5,7 +5,7 @@ metadata:
   labels:
     app: wormhole-dispatcher
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: wormhole-dispatcher
