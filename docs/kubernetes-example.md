@@ -364,13 +364,6 @@ The document has moved
 </BODY></HTML>
 ```
 
-We can check that there's only one TCP connection established with netstat:
-
-```
-$ sudo netstat -punta | grep $(minikube ip) | grep wormhole
-tcp        0      0 192.168.99.1:34328      192.168.99.100:31329    ESTABLISHED 25021/./wormhole-co 
-```
-
 ## Test Dispatcher proxy from the Kyma cluster
 
 We can start a pod in the Kyma cluster and access services running where the Wormhole Connector is running.
@@ -422,7 +415,7 @@ Accept: */*
 
 ```
 
-If you ran the previous example too you should see two established connections with netstat:
+We can check that there're only two TCP connections established with netstat:
 
 ```
 $ sudo netstat -punta | grep $(minikube ip) | grep wormhole
