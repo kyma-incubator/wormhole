@@ -251,15 +251,16 @@ We'll now add the corresponding line to `/etc/hosts`:
 192.168.99.100 dispatcher.wormhole.io
 ```
 
-Then, we'll find out the port where the wormhole-dispatcher is exposed:
+Then, we'll find out the ports where the wormhole-dispatcher is exposed:
 
 ```
 $ kubectl get svc wormhole-dispatcher
-NAME                  TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)          AGE
-wormhole-dispatcher   NodePort   10.110.72.77   <none>        9090:31329/TCP   2h
+NAME                  TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)                         AGE
+wormhole-dispatcher   NodePort   10.110.72.77   <none>        9090:31329/TCP,9091:32681/TCP   2h
 ```
 
-So we can access the service at `dispatcher.wormhole.io:31329`
+So we can access the service at `dispatcher.wormhole.io:31329`.
+The other port is to establish reverse-tunnels so the Dispatcher can also act as a proxy for applications inside the Kyma cluster.
 
 We have everything we need to start the wormhole-connector.
 
@@ -269,6 +270,7 @@ We'll go back to the root directory of the project and run it:
 ./wormhole-connector \
     --local-addr localhost:8080 \
     --kyma-server https://dispatcher.wormhole.io:31329 \
+    --kyma-reverse-tunnel-port 32681 \
     --cert-file certs/connector.pem \
     --key-file certs/connector-key.pem \
     --trust-ca-file certs/ca.pem
@@ -367,4 +369,63 @@ We can check that there's only one TCP connection established with netstat:
 ```
 $ sudo netstat -punta | grep $(minikube ip) | grep wormhole
 tcp        0      0 192.168.99.1:34328      192.168.99.100:31329    ESTABLISHED 25021/./wormhole-co 
+```
+
+## Test Dispatcher proxy from the Kyma cluster
+
+We can start a pod in the Kyma cluster and access services running where the Wormhole Connector is running.
+
+To demonstrate this we'll simply run netcat on the host listening on localhost and we'll access it from an alpine pod running in our minikube cluster.
+
+In one terminal, we start a netcat server:
+
+```
+$ nc -l 127.0.0.1 -p 9292
+```
+
+In another terminal, we run an alpine pod with the CA passed as an env variable, install curl, add an entry to `/etc/hosts`, and access the netcat server through the Wormhole Dispatcher:
+
+```
+$ kubectl run -it alpine --image alpine sh --env="WORMHOLE_CA=$(cat certs/ca.pem)"
+/ # echo "$WORMHOLE_CA" > ca.pem
+/ # apk update
+fetch http://dl-cdn.alpinelinux.org/alpine/v3.8/main/x86_64/APKINDEX.tar.gz
+fetch http://dl-cdn.alpinelinux.org/alpine/v3.8/community/x86_64/APKINDEX.tar.gz
+v3.8.0-59-g7fd9036fc1 [http://dl-cdn.alpinelinux.org/alpine/v3.8/main]
+v3.8.0-56-g8ad5ad9f75 [http://dl-cdn.alpinelinux.org/alpine/v3.8/community]
+OK: 9539 distinct packages available
+/ # apk add curl
+(1/5) Installing ca-certificates (20171114-r3)
+(2/5) Installing nghttp2-libs (1.32.0-r0)
+(3/5) Installing libssh2 (1.8.0-r3)
+(4/5) Installing libcurl (7.61.0-r0)
+(5/5) Installing curl (7.61.0-r0)
+Executing busybox-1.28.4-r0.trigger
+Executing ca-certificates-20171114-r3.trigger
+OK: 6 MiB in 18 packages
+/ # nslookup wormhole-dispatcher
+nslookup: can't resolve '(null)': Name does not resolve
+
+Name:      wormhole-dispatcher
+Address 1: 10.108.204.112 dispatcher.wormhole.io
+/ # echo "10.108.204.112 dispatcher.wormhole.io" >> /etc/hosts
+/ # curl --proxy https://dispatcher.wormhole.io:9090 --proxy-cacert ca.pem http://127.0.0.1:9292
+```
+
+We should now see the request in the netcat terminal:
+
+```
+GET / HTTP/1.1
+Host: 127.0.0.1:9292
+User-Agent: curl/7.61.0
+Accept: */*
+
+```
+
+If you ran the previous example too you should see two established connections with netstat:
+
+```
+$ sudo netstat -punta | grep $(minikube ip) | grep wormhole
+tcp        0      0 192.168.99.1:34328      192.168.99.100:31329    ESTABLISHED 25021/./wormhole-co 
+tcp        0      0 192.168.99.1:39766      192.168.99.100:32681    ESTABLISHED 25021/./wormhole-co 
 ```
