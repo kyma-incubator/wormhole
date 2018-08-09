@@ -30,7 +30,11 @@ You can find an example of the component sitting on the other side in [wormhole-
 You'll also need to provide a CA file that signed the certificates used by the component on the other side.
 
 ```
-$ ./wormhole-connector --trust-ca-file ca.pem --kyma-server https://dispatcher.wormhole.example.com
+$ ./wormhole-connector --trust-ca-file ca.pem --kyma-server https://dispatcher.wormhole.example.com --kyma-reverse-tunnel-port 444
 ```
 
 Then you can configure your applications to use `https://localhost:8080` as an HTTPS proxy.
+
+## Kubernetes example
+
+For a full example using Kubernetes check the [Kubernetes example](docs/kubernetes-example.md).
