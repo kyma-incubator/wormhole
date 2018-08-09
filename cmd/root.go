@@ -42,19 +42,20 @@ var (
 
 	defaultDataDir = fmt.Sprintf("%s/.config/wormhole-connector", os.Getenv("HOME"))
 
-	flagDataDir         string
-	flagKymaServer      string
-	flagTimeout         time.Duration
-	flagSerfMemberAddrs string
-	flagSerfPort        int
-	flagRaftPort        int
-	flagLocalAddr       string
-	flagTrustCAFile     string
-	flagInsecure        bool
-	flagCertFile        string
-	flagKeyFile         string
-	flagVerbose         bool
-	flagQuiet           bool
+	flagDataDir               string
+	flagKymaServer            string
+	flagKymaReverseTunnelPort int
+	flagTimeout               time.Duration
+	flagSerfMemberAddrs       string
+	flagSerfPort              int
+	flagRaftPort              int
+	flagLocalAddr             string
+	flagTrustCAFile           string
+	flagInsecure              bool
+	flagCertFile              string
+	flagKeyFile               string
+	flagVerbose               bool
+	flagQuiet                 bool
 )
 
 // Execute adds all child commands to the root command sets flags appropriately.
@@ -72,6 +73,7 @@ func init() {
 
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.config/wormhole-connector/connector.yaml)")
 	RootCmd.PersistentFlags().StringVar(&flagKymaServer, "kyma-server", "https://localhost:9090", "Kyma server address")
+	RootCmd.PersistentFlags().IntVar(&flagKymaReverseTunnelPort, "kyma-reverse-tunnel-port", 9091, "Port where Kyma is listening for reverse tunnel connections")
 	RootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 5*time.Minute, "Timeout for the HTTP/2 connection")
 	RootCmd.PersistentFlags().StringVar(&flagSerfMemberAddrs, "serf-member-addrs", "", "a set of IP:Port pairs of each Serf member")
 	RootCmd.PersistentFlags().IntVar(&flagSerfPort, "serf-port", 1111, "port number on which Serf listens (default is 1111)")
@@ -88,6 +90,7 @@ func init() {
 
 	viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	viper.BindPFlag("kymaServer", RootCmd.PersistentFlags().Lookup("kyma-server"))
+	viper.BindPFlag("kymaReverseTunnelPort", RootCmd.PersistentFlags().Lookup("kyma-reverse-tunnel-port"))
 	viper.BindPFlag("timeout", RootCmd.PersistentFlags().Lookup("timeout"))
 	viper.BindPFlag("serf.memberAddrs", RootCmd.PersistentFlags().Lookup("serf-member-addrs"))
 	viper.BindPFlag("serf.port", RootCmd.PersistentFlags().Lookup("serf-port"))
@@ -133,15 +136,16 @@ func setLogLevel() {
 
 func runWormholeConnector(cmd *cobra.Command, args []string) {
 	config := connector.WormholeConnectorConfig{
-		KymaServer:      viper.GetString("kymaServer"),
-		RaftPort:        viper.GetInt("raft.port"),
-		LocalAddr:       viper.GetString("localAddr"),
-		SerfMemberAddrs: viper.GetString("serf.memberAddrs"),
-		SerfPort:        viper.GetInt("serf.port"),
-		Timeout:         viper.GetDuration("timeout"),
-		DataDir:         viper.GetString("dataDir"),
-		TrustCAFile:     viper.GetString("trustCAFile"),
-		Insecure:        viper.GetBool("insecure"),
+		KymaServer:            viper.GetString("kymaServer"),
+		KymaReverseTunnelPort: viper.GetInt("kymaReverseTunnelPort"),
+		RaftPort:              viper.GetInt("raft.port"),
+		LocalAddr:             viper.GetString("localAddr"),
+		SerfMemberAddrs:       viper.GetString("serf.memberAddrs"),
+		SerfPort:              viper.GetInt("serf.port"),
+		Timeout:               viper.GetDuration("timeout"),
+		DataDir:               viper.GetString("dataDir"),
+		TrustCAFile:           viper.GetString("trustCAFile"),
+		Insecure:              viper.GetBool("insecure"),
 	}
 
 	setLogLevel()

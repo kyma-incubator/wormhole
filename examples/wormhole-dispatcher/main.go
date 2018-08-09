@@ -17,6 +17,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io"
@@ -34,19 +35,20 @@ import (
 	"github.com/kinvolk/wormhole-connector/internal/header"
 	"github.com/kinvolk/wormhole-connector/internal/http2error"
 	"github.com/kinvolk/wormhole-connector/internal/streamio"
-	"github.com/kinvolk/wormhole-connector/internal/tlsutil"
 	"github.com/kinvolk/wormhole-connector/internal/tunnel"
 )
+
+// we need a dummy address to send in requests through the reverse tunnel
+// connection
+const dummyAddress = "https://1.2.3.4:443"
 
 var (
 	logger     = log.WithFields(log.Fields{"component": "dispatcher"})
 	bufferPool sync.Pool
 	client     *http.Client
 
-	flagConnectorServer = flag.String("connector-server", "https://localhost:8080", "Address of the Wormhole Connector. Required.")
-	flagLocalAddr       = flag.String("local-addr", "localhost:4430", "TLS address to listen on ('host:port' or ':port'). Required.")
-	flagTrustCAFile     = flag.String("trust-ca-file", "", "Path to a custom CA file for the Wormhole Connector address")
-	flagInsecure        = flag.Bool("insecure", false, "Trust any CA for the Wormhole Connector")
+	flagLocalAddr         = flag.String("local-addr", "localhost:4430", "TLS address to listen on ('host:port' or ':port'). Required.")
+	flagReverseTunnelPort = flag.Int("reverse-tunnel-port", 4431, "port to listen on for reverse tunnel requests")
 )
 
 func handleIncomingTunnel(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +106,13 @@ func handleOutgoingTunnel(w http.ResponseWriter, r *http.Request) {
 
 	logger.Printf("proxying request")
 
-	tunnelWriter, tunnelRes, err := tunnel.Create(client, r.Host, *flagConnectorServer, tunnel.RequestHTTPS, tunnel.DispatcherEndpoint)
+	if client == nil {
+		logger.Error("Wormhole Connector not connected")
+		http.Error(w, "Wormhole Connector not connected", http.StatusBadGateway)
+		return
+	}
+
+	tunnelWriter, tunnelRes, err := tunnel.Create(client, r.Host, dummyAddress, tunnel.RequestHTTPS, tunnel.DispatcherEndpoint)
 	if err != nil {
 		logger.WithFields(log.Fields{
 			"operation": "create tunnel connection",
@@ -154,7 +162,7 @@ func handleOutgoingHTTP(w http.ResponseWriter, r *http.Request) {
 
 	logger.Infof("proxying request")
 
-	tunnelWriter, tunnelRes, err := tunnel.Create(client, r.Host, *flagConnectorServer, tunnel.RequestHTTP, tunnel.DispatcherEndpoint)
+	tunnelWriter, tunnelRes, err := tunnel.Create(client, r.Host, dummyAddress, tunnel.RequestHTTP, tunnel.DispatcherEndpoint)
 	if err != nil {
 		logger.WithFields(log.Fields{
 			"operation": "create tunnel connection",
@@ -215,9 +223,56 @@ func dispatcherHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// listenForReverseTunnel listens for reverse tunnel requests from the Wormhole
+// Connector on a loop to deal with Connector disappearing
+func listenForReverseTunnel(port int, tlsConfig *tls.Config) {
+	host, _, err := net.SplitHostPort(*flagLocalAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	listener, err := tls.Listen("tcp", fmt.Sprintf("%s:%d", host, port), tlsConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for {
+		c, err := listener.Accept()
+		if err != nil {
+			log.Fatalf("error accepting: %v", err)
+		}
+
+		if err := c.(*tls.Conn).Handshake(); err != nil {
+			log.Fatalf("error during TLS handshake: %v", err)
+		}
+
+		tr := &http2.Transport{
+			DialTLS: func(string, string, *tls.Config) (net.Conn, error) {
+				return c, nil
+			},
+		}
+
+		client = &http.Client{Transport: tr}
+
+		// We need to do some dummy request to avoid running into the HTTP/2
+		// preface timeout, which is not configurable in the server
+		// (https://github.com/golang/net/blob/f9ce57c11/http2/server.go#L919)
+		_, _ = client.Get(dummyAddress)
+	}
+}
+
 func main() {
 	var srv http.Server
 	flag.Parse()
+
+	cert, err := tls.LoadX509KeyPair("dispatcher.pem", "dispatcher-key.pem")
+	if err != nil {
+		log.Fatalf("error loading certificates: %v", err)
+	}
+
+	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{http2.NextProtoTLS}}
+
+	go listenForReverseTunnel(*flagReverseTunnelPort, tlsConfig)
 
 	srv.Addr = *flagLocalAddr
 	srv.IdleTimeout = 90 * time.Minute
@@ -225,21 +280,6 @@ func main() {
 
 	makeBuffer := func() interface{} { return make([]byte, 0, 32*1024) }
 	bufferPool = sync.Pool{New: makeBuffer}
-
-	tlsConfig, err := tlsutil.GenerateTLSConfig(*flagTrustCAFile, *flagInsecure)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	tr := &http.Transport{
-		TLSClientConfig: tlsConfig,
-	}
-
-	client = &http.Client{
-		Transport: tr,
-	}
-
-	http2.ConfigureTransport(tr)
 
 	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodConnect {

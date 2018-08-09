@@ -18,11 +18,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -71,15 +73,16 @@ type WormholeConnector struct {
 // WormholeConnectorConfig holds all kinds of configurations given by users or
 // local config files. It is used when initializing a new wormhole connector.
 type WormholeConnectorConfig struct {
-	KymaServer      string
-	RaftPort        int
-	LocalAddr       string
-	SerfMemberAddrs string
-	SerfPort        int
-	Timeout         time.Duration
-	DataDir         string
-	TrustCAFile     string
-	Insecure        bool
+	KymaServer            string
+	KymaReverseTunnelPort int
+	RaftPort              int
+	LocalAddr             string
+	SerfMemberAddrs       string
+	SerfPort              int
+	Timeout               time.Duration
+	DataDir               string
+	TrustCAFile           string
+	Insecure              bool
 }
 
 // splitLocalAddr takes a localAddr[:port] address and returns its address and
@@ -95,10 +98,10 @@ func splitLocalAddr(localAddr, defaultPort string) (string, string, error) {
 func (wc *WormholeConnector) wormholeHandler(m *mux.Router) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodConnect {
-			wc.handleProxy(w, r)
+			wc.handleOutgoingTunnel(w, r)
 			return
 		} else {
-			wc.handleHTTP(w, r)
+			wc.handleOutgoingHTTP(w, r)
 		}
 	})
 }
@@ -180,7 +183,51 @@ func NewWormholeConnector(config WormholeConnectorConfig) (*WormholeConnector, e
 
 	registerHandlers(m, wc)
 
+	go wc.reverseTunnel(config.KymaReverseTunnelPort, tlsConfig)
+
 	return wc, nil
+}
+
+func (wc *WormholeConnector) reverseTunnel(port int, tlsConfig *tls.Config) error {
+	for {
+		time.Sleep(1 * time.Second)
+
+		u, err := url.Parse(wc.kymaServerAddr)
+		if err != nil {
+			wc.logger.Fatalf("error parsing Kyma server address: %v", err)
+		}
+
+		host := strings.Split(u.Host, ":")[0]
+
+		dialer := &net.Dialer{
+			Timeout:   20 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}
+
+		c, err := tls.DialWithDialer(
+			dialer,
+			"tcp",
+			fmt.Sprintf("%s:%d", host, port),
+			tlsConfig,
+		)
+		if err != nil {
+			wc.logger.Debugf("failed to connect to Wormhole Dispatcher: %v", err)
+			wc.logger.Debug("retrying...")
+			continue
+		}
+
+		if err := c.Handshake(); err != nil {
+			wc.logger.Debugf("failed do TLS handshake to Wormhole Dispatcher: %v", err)
+			wc.logger.Debug("retrying...")
+			continue
+		}
+
+		log.Infof("connected to Wormhole Dispatcher")
+		h2s := &http2.Server{}
+		h2s.ServeConn(c, &http2.ServeConnOpts{Handler: http.HandlerFunc(wc.handleIncomingTunnel)})
+		log.Infof("disconnected from Wormhole Dispatcher")
+	}
 }
 
 func (wc *WormholeConnector) addRequestID(next http.Handler) http.Handler {
@@ -223,11 +270,11 @@ func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http
 	http.Redirect(w, r, leaderURL, http.StatusTemporaryRedirect)
 }
 
-func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) {
+func (wc *WormholeConnector) handleOutgoingHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ctxLogger := getLogger(ctx)
 	logger := ctxLogger.WithFields(log.Fields{
-		"handler": "HTTP",
+		"handler": "outgoing HTTP",
 		"host":    r.Host,
 	})
 
@@ -278,12 +325,12 @@ func (wc *WormholeConnector) handleHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request) {
+func (wc *WormholeConnector) handleOutgoingTunnel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ctxLogger := getLogger(ctx)
 
 	logger := ctxLogger.WithFields(log.Fields{
-		"handler": "HTTPS",
+		"handler": "outgoing HTTPS",
 		"host":    r.Host,
 	})
 
@@ -381,6 +428,66 @@ func (wc *WormholeConnector) handleProxy(w http.ResponseWriter, r *http.Request)
 			http.Error(w, fmt.Sprintf("failed to copy proxy streams: %v", err), http.StatusBadGateway)
 			return
 		}
+	}
+}
+
+func (wc *WormholeConnector) handleIncomingTunnel(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithFields(log.Fields{
+		"handler": "incoming",
+		"host":    r.Host,
+	})
+
+	// We need to do some dummy request to avoid running into the HTTP/2
+	// preface timeout, which is not configurable in the server
+	// (https://github.com/golang/net/blob/f9ce57c11/http2/server.go#L919)
+	if r.Method == http.MethodGet {
+		w.Write([]byte("PONG"))
+		return
+	}
+
+	host := r.Host
+	// if the request doesn't include a port and the protocol is HTTP, use port
+	// 80 as a default
+	if !strings.Contains(r.Host, ":") && r.Header.Get("X-Forwarded-Proto") == "http" {
+		host += ":80"
+	}
+
+	logger.Printf("dispatching traffic to %q", host)
+
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	dialer := &net.Dialer{
+		Timeout:   20 * time.Second,
+		KeepAlive: 30 * time.Second,
+		DualStack: true,
+	}
+
+	errorResponse := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Proto:      "HTTP/2.0",
+		ProtoMajor: 2,
+		ProtoMinor: 0,
+		Header:     make(http.Header),
+	}
+
+	dest_conn, err := dialer.Dial("tcp", host)
+	if err != nil {
+		errorMsg := fmt.Sprintf("error dialing %q: %v", host, err)
+		errorResponse.Body = ioutil.NopCloser(bytes.NewBufferString(errorMsg))
+		errorResponse.ContentLength = int64(len(errorMsg))
+		errorResponse.Write(w)
+		return
+	}
+
+	err = streamio.DualStream(dest_conn, r.Body, w, dest_conn, &wc.bufferPool)
+	if err != nil && !http2error.IsClientDisconnect(err) {
+		errorMsg := fmt.Sprintf("error streaming: %v", err)
+		errorResponse.ContentLength = int64(len(errorMsg))
+		errorResponse.Body = ioutil.NopCloser(bytes.NewBufferString(errorMsg))
+		errorResponse.Write(w)
+		return
 	}
 }
 
