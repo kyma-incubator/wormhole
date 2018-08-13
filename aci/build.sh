@@ -26,8 +26,8 @@ acbuild --debug copy entrypoint.sh /entrypoint.sh
 acbuild --debug set-exec /entrypoint.sh
 
 # Add keys mountoint
-acbuild --debug mount add key /server.key
-acbuild --debug mount add cert /server.crt
+acbuild --debug mount add key /connector-key.pem
+acbuild --debug mount add cert /connector.pem
 
 # Set user and group
 acbuild --debug set-user 1000
