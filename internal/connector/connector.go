@@ -240,14 +240,15 @@ func (wc *WormholeConnector) addRequestID(next http.Handler) http.Handler {
 
 func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http.Request) {
 	wr := wc.WRaft
-	if wr.IsLeader() {
+	// if we're leader or the request is read-only, we can handle the event
+	if wr.IsLeader() || r.Method == http.MethodGet {
 		// This node is a leader, handle the real request
 		wr.handleEvents(w, r)
 		return
 	}
 
 	// It means this node is not a leader, but a follower.
-	// Redirect every request to the leader.
+	// Redirect write requests to the leader.
 	// wr.rf.Leader() returns a string in format of LEADER_IP_ADDRESS:LEADER_RAFT_PORT,
 	// e.g. 172.17.0.2:1112, so we need to split it up to get only the first
 	// part, to append rpcPort, e.g. 8080.
@@ -491,7 +492,7 @@ func (wc *WormholeConnector) handleIncomingTunnel(w http.ResponseWriter, r *http
 }
 
 func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
-	// redirect every event request to the raft leader
+	// redirect every write event request to the raft leader
 	mux.PathPrefix("/event").HandlerFunc(wc.handleLeaderRedirect)
 
 	// handle proxy for other requests
