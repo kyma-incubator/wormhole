@@ -38,3 +38,7 @@ Then you can configure your applications to use `https://localhost:8080` as an H
 ## Kubernetes example
 
 For a full example using Kubernetes check the [Kubernetes example](docs/kubernetes-example.md).
+
+## Serf/Raft example
+
+For an example showing how the Wormhole Cluster can store events in a replicated fashion check the [Serf/Raft example](docs/serf-raft-example.md).
