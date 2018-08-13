@@ -99,9 +99,8 @@ func (wc *WormholeConnector) wormholeHandler(m *mux.Router) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodConnect {
 			wc.handleOutgoingTunnel(w, r)
-			return
 		} else {
-			wc.handleOutgoingHTTP(w, r)
+			m.ServeHTTP(w, r)
 		}
 	})
 }
@@ -266,7 +265,7 @@ func (wc *WormholeConnector) handleLeaderRedirect(w http.ResponseWriter, r *http
 		return
 	}
 
-	leaderURL := fmt.Sprintf("https://%v:%v", leaderHost, wc.rpcPort)
+	leaderURL := fmt.Sprintf("https://%v:%v/event", leaderHost, wc.rpcPort)
 	http.Redirect(w, r, leaderURL, http.StatusTemporaryRedirect)
 }
 
@@ -492,8 +491,11 @@ func (wc *WormholeConnector) handleIncomingTunnel(w http.ResponseWriter, r *http
 }
 
 func registerHandlers(mux *mux.Router, wc *WormholeConnector) {
-	// redirect every request to the raft leader
-	mux.PathPrefix("/").HandlerFunc(wc.handleLeaderRedirect)
+	// redirect every event request to the raft leader
+	mux.PathPrefix("/event").HandlerFunc(wc.handleLeaderRedirect)
+
+	// handle proxy for other requests
+	mux.PathPrefix("/").HandlerFunc(wc.handleOutgoingHTTP)
 }
 
 // ListenAndServeTLS spawns a goroutine that runs http.ListenAndServeTLS.
