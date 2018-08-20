@@ -16,7 +16,7 @@ First, build an image:
 $ make docker
 ```
 
-This will generate a docker image with a name `kinvolk/wormhole-connector`.
+This will generate a docker image with a name `kyma-incubator/wormhole-connector`.
 
 Now you can start the first server of your cluster.
 
@@ -27,7 +27,7 @@ docker run --rm -i --tty \
     --volume=$PWD/connector-key.pem:/tmp/connector-key.pem \
     --volume=$HOME/.config/wormhole-connector:/tmp/.config/wormhole-connector \
     --entrypoint=/bin/sh \
-    kinvolk/wormhole-connector \
+    kyma-incubator/wormhole-connector \
     -c "/entrypoint.sh"
 ```
 
@@ -42,7 +42,7 @@ docker run --rm -i --tty \
     --volume=$PWD/connector-key.pem:/tmp/connector-key.pem \
     --volume=$HOME/.config/wormhole-connector:/tmp/.config/wormhole-connector \
     --entrypoint=/bin/sh \
-    kinvolk/wormhole-connector \
+    kyma-incubator/wormhole-connector \
     -c "/entrypoint.sh --serf-member-addrs=172.17.0.2:1111"
 ```
 
@@ -79,7 +79,7 @@ Now we'll start the rest of the servers pointing to the IP of the first member, 
 
 ```
 $ rkt list | grep running
-0f3359dc	wormhole-connector	kinvolk.io/wormhole-connector	running	5 seconds ago	4 seconds ago	default:ip4=172.16.28.2
+0f3359dc	wormhole-connector	kyma-incubator.io/wormhole-connector	running	5 seconds ago	4 seconds ago	default:ip4=172.16.28.2
 ```
 
 It's `172.16.28.2`, so we can now start the rest.
@@ -180,9 +180,9 @@ Let's find the leader (oldest container) and stop it:
 ```
 $ docker ps
 CONTAINER ID        IMAGE                        COMMAND                  CREATED              STATUS              PORTS                     NAMES
-bd842fe90782        kinvolk/wormhole-connector   "/bin/sh -c '/entryp…"   3 seconds ago        Up 2 seconds        1111-1112/tcp, 8080/tcp   agitated_dubinsky
-796196f6ccb5        kinvolk/wormhole-connector   "/bin/sh -c '/entryp…"   About a minute ago   Up About a minute   1111-1112/tcp, 8080/tcp   adoring_poincare
-b2655aa28aef        kinvolk/wormhole-connector   "/bin/sh -c '/entryp…"   2 minutes ago        Up 2 minutes        1111-1112/tcp, 8080/tcp   vigilant_lamport
+bd842fe90782        kyma-incubator/wormhole-connector   "/bin/sh -c '/entryp…"   3 seconds ago        Up 2 seconds        1111-1112/tcp, 8080/tcp   agitated_dubinsky
+796196f6ccb5        kyma-incubator/wormhole-connector   "/bin/sh -c '/entryp…"   About a minute ago   Up About a minute   1111-1112/tcp, 8080/tcp   adoring_poincare
+b2655aa28aef        kyma-incubator/wormhole-connector   "/bin/sh -c '/entryp…"   2 minutes ago        Up 2 minutes        1111-1112/tcp, 8080/tcp   vigilant_lamport
 $ docker stop b2655aa28aef
 b2655aa28aef
 ```
@@ -191,9 +191,9 @@ Or, with rkt:
 
 ```
 $ rkt list | grep running
-0f3359dc	wormhole-connector	kinvolk.io/wormhole-connector	running	7 minutes ago	7 minutes ago	default:ip4=172.16.28.2
-5293dad1	wormhole-connector	kinvolk.io/wormhole-connector	running	5 minutes ago	5 minutes ago	default:ip4=172.16.28.3
-d9ffd255	wormhole-connector	kinvolk.io/wormhole-connector	running	5 minutes ago	5 minutes ago	default:ip4=172.16.28.4
+0f3359dc	wormhole-connector	kyma-incubator.io/wormhole-connector	running	7 minutes ago	7 minutes ago	default:ip4=172.16.28.2
+5293dad1	wormhole-connector	kyma-incubator.io/wormhole-connector	running	5 minutes ago	5 minutes ago	default:ip4=172.16.28.3
+d9ffd255	wormhole-connector	kyma-incubator.io/wormhole-connector	running	5 minutes ago	5 minutes ago	default:ip4=172.16.28.4
 $ sudo rkt stop 0f3359dc
 0f3359dc-2555-465b-9a2a-3dac255fa769
 ```

@@ -17,7 +17,7 @@ spec:
       containers:
       - name: wormhole-dispatcher
         imagePullPolicy: IfNotPresent
-        image: kinvolk/wormhole-dispatcher
+        image: kyma-incubator/wormhole-dispatcher
         args:
           - "--local-addr=0.0.0.0:9090"
           - "--reverse-tunnel-port=9091"

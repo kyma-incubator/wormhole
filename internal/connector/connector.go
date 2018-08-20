@@ -37,13 +37,13 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 
-	"github.com/kinvolk/wormhole-connector/internal/connection"
-	"github.com/kinvolk/wormhole-connector/internal/header"
-	"github.com/kinvolk/wormhole-connector/internal/http2error"
-	"github.com/kinvolk/wormhole-connector/internal/streamio"
-	"github.com/kinvolk/wormhole-connector/internal/tlsutil"
-	"github.com/kinvolk/wormhole-connector/internal/tunnel"
-	"github.com/kinvolk/wormhole-connector/lib"
+	"github.com/kyma-incubator/wormhole/internal/connection"
+	"github.com/kyma-incubator/wormhole/internal/header"
+	"github.com/kyma-incubator/wormhole/internal/http2error"
+	"github.com/kyma-incubator/wormhole/internal/streamio"
+	"github.com/kyma-incubator/wormhole/internal/tlsutil"
+	"github.com/kyma-incubator/wormhole/internal/tunnel"
+	"github.com/kyma-incubator/wormhole/lib"
 )
 
 const (

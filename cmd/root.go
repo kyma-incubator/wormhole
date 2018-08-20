@@ -26,7 +26,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/kinvolk/wormhole-connector/internal/connector"
+	"github.com/kyma-incubator/wormhole/internal/connector"
 )
 
 var cfgFile string

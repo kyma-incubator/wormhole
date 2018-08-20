@@ -26,7 +26,7 @@ import (
 	"github.com/hashicorp/serf/serf"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/kinvolk/wormhole-connector/lib"
+	"github.com/kyma-incubator/wormhole/lib"
 )
 
 var (

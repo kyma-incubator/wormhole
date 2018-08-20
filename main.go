@@ -17,7 +17,7 @@ package main
 import (
 	"os"
 
-	"github.com/kinvolk/wormhole-connector/cmd"
+	"github.com/kyma-incubator/wormhole/cmd"
 )
 
 func main() {

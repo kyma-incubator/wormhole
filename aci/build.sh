@@ -13,7 +13,7 @@ acbuild --debug begin
 trap "{ export EXT=$?; acbuild --debug end && exit $EXT; }" EXIT
 
 # Name the ACI
-acbuild --debug set-name kinvolk.io/wormhole-connector
+acbuild --debug set-name kyma-incubator.io/wormhole-connector
 
 # Based on alpine
 acbuild --debug dep add quay.io/coreos/alpine-sh

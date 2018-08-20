@@ -21,8 +21,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/kinvolk/wormhole-connector/internal/http2error"
-	"github.com/kinvolk/wormhole-connector/internal/streamio"
+	"github.com/kyma-incubator/wormhole/internal/http2error"
+	"github.com/kyma-incubator/wormhole/internal/streamio"
 )
 
 // ServeHijack hijacks the connection from ResponseWriter, writes the response

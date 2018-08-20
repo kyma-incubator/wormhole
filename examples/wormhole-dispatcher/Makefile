@@ -10,4 +10,4 @@ linux:
 		./main.go
 
 docker: linux
-	docker build -t kinvolk/wormhole-dispatcher .
+	docker build -t kyma-incubator/wormhole-dispatcher .
